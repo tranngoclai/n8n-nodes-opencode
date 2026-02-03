@@ -7,54 +7,37 @@ import type {
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
 
-export class OpenCode implements INodeType {
+import {
+    getAntigravityEndpoint,
+    getAntigravityHeaders,
+    transformToAntigravityRequest,
+    transformAntigravityResponse,
+} from './utils/antigravity';
+import { ANTIGRAVITY_DEFAULT_PROJECT_ID } from './utils/constants';
+
+
+export class Antigravity implements INodeType {
     description: INodeTypeDescription = {
-        displayName: 'OpenCode',
-        name: 'openCode',
-        icon: 'file:opencode.svg',
+        displayName: 'Antigravity',
+        name: 'antigravity',
+        icon: 'file:google.svg',
         group: ['transform'],
         version: 1,
         subtitle: '={{$parameter["operation"]}}',
-        description: 'Interact with OpenCode AI API',
+        description: 'Interact with Antigravity AI API',
         defaults: {
-            name: 'OpenCode',
+            name: 'Antigravity',
         },
         inputs: [NodeConnectionTypes.Main],
         outputs: [NodeConnectionTypes.Main],
         usableAsTool: true,
         credentials: [
             {
-                name: 'googleOAuth2Api',
-                required: true,
-                displayOptions: {
-                    show: {
-                        authentication: ['googleOAuth2'],
-                    },
-                },
-            },
-            {
-                name: 'openCodeApi',
+                name: 'antigravityOAuth2',
                 required: true,
             },
         ],
         properties: [
-            {
-                displayName: 'Authentication',
-                name: 'authentication',
-                type: 'options',
-                options: [
-                    {
-                        name: 'Google OAuth2',
-                        value: 'googleOAuth2',
-                    },
-                    {
-                        name: 'None',
-                        value: 'none',
-                    },
-                ],
-                default: 'googleOAuth2',
-                description: 'Authentication method to use',
-            },
             {
                 displayName: 'Operation',
                 name: 'operation',
@@ -131,7 +114,7 @@ export class OpenCode implements INodeType {
                     },
                 ],
                 default: 'gpt-4',
-                description: 'The AI model to use (Antigravity models require opencode-antigravity-auth plugin)',
+                description: 'The AI model to use (all models accessed via Antigravity)',
             },
             {
                 displayName: 'Prompt',
@@ -265,9 +248,19 @@ export class OpenCode implements INodeType {
                     {},
                 ) as IDataObject;
 
-                // Get credentials
-                const credentials = await this.getCredentials('openCodeApi');
-                const baseUrl = credentials.baseUrl as string;
+                // Get Antigravity OAuth2 credentials
+                const credentials = await this.getCredentials('antigravityOAuth2');
+                const oauthData = credentials.oauthTokenData as { access_token?: string } | undefined;
+                const accessToken = oauthData?.access_token;
+                const projectId = (credentials.projectId as string) || ANTIGRAVITY_DEFAULT_PROJECT_ID;
+
+                if (!accessToken) {
+                    throw new NodeOperationError(
+                        this.getNode(),
+                        'Access token not found. Please re-authenticate.',
+                        { itemIndex },
+                    );
+                }
 
                 let userMessage = '';
 
@@ -326,25 +319,23 @@ export class OpenCode implements INodeType {
                     ],
                     temperature,
                     max_tokens: maxTokens,
-                    // Hard-coded plugin support for Antigravity auth
-                    plugin: ['opencode-antigravity-auth@latest'],
                     ...additionalOptions,
                 };
 
-                // Make the API request
-                const response = await this.helpers.httpRequestWithAuthentication.call(
-                    this,
-                    'openCodeApi',
-                    {
-                        method: 'POST',
-                        url: `${baseUrl}/v1/chat/completions`,
-                        body,
-                        json: true,
-                    },
-                );
+                // Make direct Antigravity API request
+                const endpoint = getAntigravityEndpoint();
+                const headers = getAntigravityHeaders(accessToken);
+                const transformedBody = transformToAntigravityRequest(body, projectId);
 
-                // Extract the response
-                const aiResponse = response as IDataObject;
+                const response = await this.helpers.httpRequest({
+                    method: 'POST',
+                    url: `${endpoint}/v1/chat/completions`,
+                    headers,
+                    body: transformedBody,
+                    json: true,
+                });
+
+                const aiResponse = transformAntigravityResponse(response as IDataObject);
                 const choices = aiResponse.choices as IDataObject[];
                 const message = choices[0]?.message as IDataObject;
                 const content = message?.content as string;

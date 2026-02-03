@@ -1,13 +1,12 @@
 # n8n-nodes-opencode
 
-This is an n8n community node that provides integration with OpenCode AI, featuring Google OAuth2 authentication for secure access.
+This is an n8n community node that provides integration with OpenCode AI with built-in Antigravity authentication for premium AI models.
 
 ![n8n.io - Workflow Automation](https://raw.githubusercontent.com/n8n-io/n8n/master/assets/n8n-logo.png)
 
 ## Features
 
 - **Built-in Antigravity Auth**: Automatically uses `opencode-antigravity-auth@latest` plugin for enhanced model access
-- **Google OAuth2 Authentication**: Secure user authentication using Google OAuth
 - **Multiple AI Operations**:
   - **Generate Code**: Create code from natural language descriptions
   - **Complete Code**: Auto-complete existing code snippets
@@ -37,29 +36,11 @@ npm install n8n-nodes-opencode
 
 Before using this node, you need:
 
-1. **Google OAuth2 Credentials**
-   - Go to [Google Cloud Console](https://console.cloud.google.com/)
-   - Create a new project or select an existing one
-   - Enable the Google+ API
-   - Go to "Credentials" and create OAuth 2.0 credentials
-   - Add authorized redirect URIs (n8n will provide these)
-   - Note your Client ID and Client Secret
-
-2. **OpenCode API Credentials**
-   - Sign up at [OpenCode.ai](https://opencode.ai)
-   - Generate an API key from your account settings
+**OpenCode API Credentials**
+- Sign up at [OpenCode.ai](https://opencode.ai)
+- Generate an API key from your account settings
 
 ## Configuration
-
-### Setting up Google OAuth2
-
-1. In n8n, go to **Credentials** → **New**
-2. Select **Google OAuth2 API**
-3. Enter your:
-   - **Client ID**: From Google Cloud Console
-   - **Client Secret**: From Google Cloud Console
-4. Click **Connect my account**
-5. Complete the Google OAuth flow
 
 ### Setting up OpenCode API
 
@@ -70,13 +51,14 @@ Before using this node, you need:
    - **Base URL**: Default is `https://api.opencode.ai` (change if using a different endpoint)
 4. Click **Create**
 
+> **Note:** The node automatically includes `opencode-antigravity-auth@latest` plugin for premium model access.
+
 ## Usage
 
 ### Basic Example: Generate Code
 
 1. Add the **OpenCode** node to your workflow
-2. Select **Authentication**: Google OAuth2 (or None if not needed)
-3. Select **Operation**: Generate Code
+2. Select **Operation**: Generate Code
 4. Choose your **Model**: e.g., GPT-4
 5. Enter your **Prompt**: "Write a Python function to calculate factorial"
 6. Configure **Temperature** and **Max Tokens** as needed
@@ -215,7 +197,6 @@ This will start n8n with your custom node loaded. Access n8n at `http://localhos
 
 - [n8n Community Nodes Documentation](https://docs.n8n.io/integrations/community-nodes/)
 - [OpenCode Documentation](https://opencode.ai/docs)
-- [Google OAuth2 Documentation](https://developers.google.com/identity/protocols/oauth2)
 
 ## License
 
@@ -240,8 +221,7 @@ For issues and questions:
 - **Enhanced Model Access**: Automatic access to extended thinking models and multi-account load balancing
 
 ### 0.1.0 (Initial Release)
-- Google OAuth2 authentication support
-- OpenCode AI integration
+- OpenCode AI integration with Antigravity auth
 - Four core operations: Generate, Complete, Analyze, Chat
 - Support for multiple AI models
 - Comprehensive parameter configuration

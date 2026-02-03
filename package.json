@@ -1,17 +1,19 @@
 {
-    "name": "n8n-nodes-opencode",
+    "name": "n8n-nodes-antigravity",
     "version": "0.2.0",
-    "description": "OpenCode AI integration with Google OAuth for n8n - Generate, complete, and analyze code using AI with built-in Antigravity auth",
+    "description": "Antigravity AI integration for n8n - Direct access to Claude and Gemini via Google OAuth",
     "license": "MIT",
-    "homepage": "https://github.com/lai.tran/n8n-nodes-opencode",
+    "homepage": "https://github.com/lai.tran/n8n-nodes-antigravity",
     "keywords": [
         "n8n-community-node-package",
         "n8n",
-        "opencode",
+        "antigravity",
         "ai",
-        "google-oauth",
         "code-generation",
-        "llm"
+        "llm",
+        "google",
+        "claude",
+        "gemini"
     ],
     "author": {
         "name": "lai.tran",
@@ -19,7 +21,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "https://github.com/lai.tran/n8n-nodes-opencode.git"
+        "url": "https://github.com/lai.tran/n8n-nodes-antigravity.git"
     },
     "scripts": {
         "build": "n8n-node build",
@@ -37,15 +39,15 @@
         "n8nNodesApiVersion": 1,
         "strict": true,
         "credentials": [
-            "dist/nodes/OpenCode/credentials/GoogleOAuth2Api.credentials.js",
-            "dist/nodes/OpenCode/credentials/OpenCodeApi.credentials.js"
+            "dist/nodes/Antigravity/credentials/AntigravityOAuth2.credentials.js"
         ],
         "nodes": [
-            "dist/nodes/OpenCode/OpenCode.node.js"
+            "dist/nodes/Antigravity/Antigravity.node.js"
         ]
     },
     "devDependencies": {
         "@n8n/node-cli": "*",
+        "change-case": "4.1.2",
         "eslint": "9.32.0",
         "prettier": "3.6.2",
         "release-it": "^19.0.4",
@@ -53,5 +55,8 @@
     },
     "peerDependencies": {
         "n8n-workflow": "*"
+    },
+    "overrides": {
+        "change-case": "4.1.2"
     }
 }
