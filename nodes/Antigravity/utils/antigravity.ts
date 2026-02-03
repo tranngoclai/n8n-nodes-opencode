@@ -53,7 +53,7 @@ export function parseRefreshToken(refreshToken: string): {
 }
 
 /**
- * Transform OpenAI-compatible request to Antigravity format
+ * Transform OpenAI-compatible request to Antigravity v1internal format
  */
 export function transformToAntigravityRequest(
     body: IDataObject,
@@ -62,42 +62,52 @@ export function transformToAntigravityRequest(
     const model = body.model as string;
     const messages = body.messages as Array<{ role: string; content: string }>;
 
-    // Build Antigravity-compatible request
-    const antigravityRequest: IDataObject = {
-        model,
-        messages,
-    };
+    // Convert messages to Antigravity contents format
+    const contents = messages.map((msg) => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }],
+    }));
 
-    // Add optional parameters
+    // Build generation config
+    const generationConfig: IDataObject = {};
+
     if (body.temperature !== undefined) {
-        antigravityRequest.temperature = body.temperature;
+        generationConfig.temperature = body.temperature;
     }
     if (body.max_tokens !== undefined) {
-        antigravityRequest.maxOutputTokens = body.max_tokens;
+        generationConfig.maxOutputTokens = body.max_tokens;
     }
     if (body.topP !== undefined) {
-        antigravityRequest.topP = body.topP;
+        generationConfig.topP = body.topP;
     }
 
-    // Add project context
-    antigravityRequest.project = projectId;
+    // Build inner request payload
+    const requestPayload: IDataObject = {
+        contents,
+    };
 
-    return antigravityRequest;
+    if (Object.keys(generationConfig).length > 0) {
+        requestPayload.generationConfig = generationConfig;
+    }
+
+    // Wrap in Antigravity v1internal format
+    return {
+        model,
+        project: projectId,
+        request: requestPayload,
+    };
 }
 
 /**
- * Transform Antigravity response to OpenAI-compatible format
+ * Transform Antigravity v1internal response to OpenAI-compatible format
  */
 export function transformAntigravityResponse(response: IDataObject): IDataObject {
-    // Antigravity uses similar format to OpenAI
-    // This function can be expanded based on actual response differences
-
     // If response already has 'choices' field, it's compatible
     if (response.choices) {
         return response;
     }
 
-    // Handle Antigravity-specific response format if needed
+    // Handle Antigravity v1internal response format
     const candidates = response.candidates as Array<IDataObject> | undefined;
     if (candidates && candidates.length > 0) {
         return {
@@ -105,15 +115,22 @@ export function transformAntigravityResponse(response: IDataObject): IDataObject
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
             model: response.model || '',
-            choices: candidates.map((candidate, index) => ({
-                index,
-                message: {
-                    role: 'assistant',
-                    content: candidate.content || '',
-                },
-                finish_reason: candidate.finishReason || 'stop',
-            })),
-            usage: response.usage || {
+            choices: candidates.map((candidate, index) => {
+                // Extract text from parts array
+                const content = candidate.content as IDataObject | undefined;
+                const parts = content?.parts as Array<IDataObject> | undefined;
+                const text = parts?.[0]?.text as string || '';
+
+                return {
+                    index,
+                    message: {
+                        role: 'assistant',
+                        content: text,
+                    },
+                    finish_reason: candidate.finishReason || 'stop',
+                };
+            }),
+            usage: response.usageMetadata || response.usage || {
                 prompt_tokens: 0,
                 completion_tokens: 0,
                 total_tokens: 0,

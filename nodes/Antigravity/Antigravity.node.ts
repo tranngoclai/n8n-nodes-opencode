@@ -329,7 +329,7 @@ export class Antigravity implements INodeType {
 
                 const response = await this.helpers.httpRequest({
                     method: 'POST',
-                    url: `${endpoint}/v1/chat/completions`,
+                    url: `${endpoint}/v1internal:generateContent`,
                     headers,
                     body: transformedBody,
                     json: true,
