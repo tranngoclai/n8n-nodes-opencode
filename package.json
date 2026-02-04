@@ -1,62 +1,48 @@
 {
-    "name": "n8n-nodes-antigravity",
-    "version": "0.2.0",
-    "description": "Antigravity AI integration for n8n - Direct access to Claude and Gemini via Google OAuth",
-    "license": "MIT",
-    "homepage": "https://github.com/lai.tran/n8n-nodes-antigravity",
-    "keywords": [
-        "n8n-community-node-package",
-        "n8n",
-        "antigravity",
-        "ai",
-        "code-generation",
-        "llm",
-        "google",
-        "claude",
-        "gemini"
-    ],
-    "author": {
-        "name": "lai.tran",
-        "email": "lai.tran@executionlab.asia"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/lai.tran/n8n-nodes-antigravity.git"
-    },
-    "scripts": {
-        "build": "n8n-node build",
-        "build:watch": "tsc --watch",
-        "dev": "n8n-node dev",
-        "lint": "n8n-node lint",
-        "lint:fix": "n8n-node lint --fix",
-        "release": "n8n-node release",
-        "prepublishOnly": "n8n-node prerelease"
-    },
-    "files": [
-        "dist"
-    ],
-    "n8n": {
-        "n8nNodesApiVersion": 1,
-        "strict": true,
-        "credentials": [
-            "dist/nodes/Antigravity/credentials/AntigravityOAuth2.credentials.js"
-        ],
-        "nodes": [
-            "dist/nodes/Antigravity/Antigravity.node.js"
-        ]
-    },
-    "devDependencies": {
-        "@n8n/node-cli": "*",
-        "change-case": "4.1.2",
-        "eslint": "9.32.0",
-        "prettier": "3.6.2",
-        "release-it": "^19.0.4",
-        "typescript": "5.9.2"
-    },
-    "peerDependencies": {
-        "n8n-workflow": "*"
-    },
-    "overrides": {
-        "change-case": "4.1.2"
-    }
+	"name": "n8n-nodes-antigravity",
+	"version": "0.1.0",
+	"description": "Antigravity Cloud Code node with web search tool loop",
+	"license": "MIT",
+	"keywords": [
+		"n8n-community-node-package"
+	],
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/credentials/AntigravityOAuth2Api.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/Antigravity/Antigravity.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "*",
+		"@types/node": "^22.10.0",
+		"change-case": "^4.1.2",
+		"eslint": "9.32.0",
+		"prettier": "3.6.2",
+		"release-it": "^19.0.4",
+		"typescript": "5.9.2"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	},
+	"overrides": {
+		"@n8n/node-cli": {
+			"change-case": "^4.1.2"
+		}
+	}
 }
