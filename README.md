@@ -1,33 +1,63 @@
 # n8n-nodes-antigravity
 
-Community node for calling Antigravity Cloud Code directly. Web search is handled natively via Google's Grounding API.
+Community node for calling Antigravity Cloud Code (Gemini) with optional Google Grounding search.
 
-## Quick Start
+## Features
+
+- Message Gemini models through Antigravity Cloud Code
+- List available models in your Antigravity project
+- Optional Google Grounding web search with citations
+- Simplified or full outputs with token usage
+
+## Installation
+
+Community Nodes UI (recommended): In n8n go to Settings → Community Nodes, click Install, and enter `n8n-nodes-antigravity`.
+
+Manual install (self-hosted): From your n8n user folder (usually `~/.n8n`) run:
+
+```bash
+npm install n8n-nodes-antigravity
+```
+
+Restart n8n after installation. For Docker, mount your custom extensions folder or set `N8N_CUSTOM_EXTENSIONS` to the folder that contains this package.
+
+## Credentials
+
+Create an `Antigravity OAuth2 API` credential in n8n and authorize with your Google account. The credential uses a preconfigured Google OAuth client and requests offline access.
+
+Project selection is automatic. To override it, set `ANTIGRAVITY_N8N_PROJECT_ID` (or `ANTIGRAVITY_PROJECT_ID`/`ANTIGRAVITY_PROJECT`) in the n8n environment.
+
+## Usage
+
+Resource `Text` provides the `Message a Model` operation.
+
+Resource `Models` provides the `List Models` operation.
+
+Key parameters for `Message a Model`:
+
+- `Model` (Gemini models only)
+- `Messages` (role + prompt)
+- `Built-in Tools > Google Search` to enable Google Grounding
+- `Options` for system message, max tokens, temperature, top P, top K, and stop sequences
+- `Simplify Output` and `Output Content as JSON`
+- `Endpoint` to choose Auto, Prod, or Daily
+
+## Web Search
+
+When Google Search is enabled, the node uses Google Grounding via Antigravity. The response includes `searchQueries`, `sources` (title + URL), and `urlsRetrieved`. Google Grounding cannot be combined with function declarations, so search runs as a separate call.
+
+## Output
+
+Full output includes `text`, `model`, `usage`, `raw`, `stopReason`, and `content` (if present). When `Simplify Output` is enabled, the node returns only `text`, or `text` plus `content` when `Output Content as JSON` is enabled.
+
+## Development
 
 ```bash
 npm install
 npm run build
-```
-
-For local development with live reload:
-
-```bash
 npm run dev
 ```
 
-## Credentials
+## License
 
-- **Antigravity OAuth2 API**: Use a Google OAuth client and grant offline access. Required for all operations.
-
-## Web Search Providers
-
-When **Enable Web Search** is true, the node uses Google Grounding API via the Antigravity API. It reuses the Antigravity OAuth2 API credential.
-
-## Google Grounding API
-
-The Google Grounding API provider uses `gemini-3-flash` to perform searches via Google's search grounding. This provides:
-- Real-time web search results
-- Source citations with titles and URLs
-- Optional URL content analysis (when URLs are provided in the query)
-
-**Note**: Google Grounding API cannot be combined with function declarations. When using this provider, the search is executed as a separate API call.
+MIT
