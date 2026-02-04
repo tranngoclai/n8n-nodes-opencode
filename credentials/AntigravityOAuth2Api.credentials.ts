@@ -1,9 +1,10 @@
-import type { ICredentialType, INodeProperties } from 'n8n-workflow';
+import type { Icon, ICredentialType, INodeProperties } from 'n8n-workflow';
 
 export class AntigravityOAuth2Api implements ICredentialType {
   name = 'antigravityOAuth2Api';
   extends = ['oAuth2Api'];
   displayName = 'Antigravity OAuth2 API';
+  icon: Icon = 'file:antigravity.svg';
   documentationUrl = 'https://accounts.google.com/';
 
   properties: INodeProperties[] = [

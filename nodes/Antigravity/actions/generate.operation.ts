@@ -2,6 +2,7 @@ import {
   NodeApiError,
   NodeOperationError,
   type IExecuteFunctions,
+  type IDataObject,
   type INodeExecutionData,
   type INodeProperties,
 } from 'n8n-workflow';
@@ -17,9 +18,11 @@ import {
 
 export const description: INodeProperties[] = [
   {
-    displayName: 'Model',
+    displayName: 'Model Name or ID',
     name: 'model',
     type: 'options',
+    description:
+      'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
     default: 'gemini-3-flash',
     required: true,
     displayOptions: SHOW_GENERATE,
@@ -110,6 +113,30 @@ export const description: INodeProperties[] = [
     displayOptions: SHOW_GENERATE,
     options: [
       {
+        name: 'maxTokens',
+        displayName: 'Max Tokens',
+        values: [
+          {
+            displayName: 'Max Tokens',
+            name: 'maxTokens',
+            type: 'number',
+            default: 512,
+          },
+        ],
+      },
+      {
+        name: 'stopSequences',
+        displayName: 'Stop Sequences (Comma-Separated)',
+        values: [
+          {
+            displayName: 'Stop Sequences (Comma-Separated)',
+            name: 'stopSequences',
+            type: 'string',
+            default: '',
+          },
+        ],
+      },
+      {
         name: 'systemMessage',
         displayName: 'System Message',
         values: [
@@ -121,18 +148,6 @@ export const description: INodeProperties[] = [
             typeOptions: {
               rows: 4,
             },
-          },
-        ],
-      },
-      {
-        name: 'maxTokens',
-        displayName: 'Max Tokens',
-        values: [
-          {
-            displayName: 'Max Tokens',
-            name: 'maxTokens',
-            type: 'number',
-            default: 512,
           },
         ],
       },
@@ -149,18 +164,6 @@ export const description: INodeProperties[] = [
         ],
       },
       {
-        name: 'topP',
-        displayName: 'Top P',
-        values: [
-          {
-            displayName: 'Top P',
-            name: 'topP',
-            type: 'number',
-            default: 1,
-          },
-        ],
-      },
-      {
         name: 'topK',
         displayName: 'Top K',
         values: [
@@ -173,14 +176,14 @@ export const description: INodeProperties[] = [
         ],
       },
       {
-        name: 'stopSequences',
-        displayName: 'Stop Sequences (comma-separated)',
+        name: 'topP',
+        displayName: 'Top P',
         values: [
           {
-            displayName: 'Stop Sequences (comma-separated)',
-            name: 'stopSequences',
-            type: 'string',
-            default: '',
+            displayName: 'Top P',
+            name: 'topP',
+            type: 'number',
+            default: 1,
           },
         ],
       },
@@ -194,6 +197,35 @@ type SearchMetadata = {
   urlsRetrieved: Array<{ url: string; status: string }>;
 };
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
+function getArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function getStringProp(record: UnknownRecord, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberProp(record: UnknownRecord, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getBooleanProp(record: UnknownRecord, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function isGeminiModel(model: string): boolean {
   return (model || '').toLowerCase().includes('gemini');
 }
@@ -202,44 +234,54 @@ function toGeminiRole(role: string): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
 }
 
-function buildGeminiContents(messages: Array<{ role: string; content: string }>): Array<Record<string, any>> {
+function buildGeminiContents(messages: Array<{ role: string; content: string }>): Array<Record<string, unknown>> {
   return messages.map(message => ({
     role: toGeminiRole(message.role),
     parts: [{ text: message.content }],
   }));
 }
 
-function parseGeminiResponse(response: any): {
-  parts: Array<Record<string, any>>;
+function parseGeminiResponse(response: unknown): {
+  parts: Array<Record<string, unknown>>;
   text: string;
   stopReason: string | null;
   search: SearchMetadata;
 } {
-  const inner = response?.response ?? response;
-  const candidate = inner?.candidates?.[0] ?? {};
-  const parts = Array.isArray(candidate?.content?.parts) ? candidate.content.parts : [];
+  const root = isRecord(response) && 'response' in response ? (response as UnknownRecord).response : response;
+  const inner = asRecord(root);
+  const candidates = getArray(inner.candidates);
+  const candidate = isRecord(candidates[0]) ? (candidates[0] as UnknownRecord) : {};
+  const content = asRecord(candidate.content);
+  const parts = getArray(content.parts).filter(isRecord) as Array<Record<string, unknown>>;
   const text = parts
-    .filter((part: any) => part?.text !== undefined && part?.thought !== true)
-    .map((part: any) => part.text ?? '')
+    .filter(part => part.text !== undefined && part.thought !== true)
+    .map(part => (typeof part.text === 'string' ? part.text : ''))
     .join('');
-  const stopReason = candidate?.finishReason ?? null;
+  const stopReason = typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
 
-  const grounding = candidate?.groundingMetadata ?? {};
-  const searchQueries = Array.isArray(grounding?.webSearchQueries) ? grounding.webSearchQueries : [];
-  const sources = Array.isArray(grounding?.groundingChunks)
-    ? grounding.groundingChunks
-        .map((chunk: any) =>
-          chunk?.web?.uri && chunk?.web?.title ? { title: chunk.web.title, url: chunk.web.uri } : null
-        )
-        .filter(Boolean)
-    : [];
-  const urlsRetrieved = Array.isArray(candidate?.urlContextMetadata?.url_metadata)
-    ? candidate.urlContextMetadata.url_metadata
-        .map((meta: any) =>
-          meta?.retrieved_url ? { url: meta.retrieved_url, status: meta.url_retrieval_status ?? 'UNKNOWN' } : null
-        )
-        .filter(Boolean)
-    : [];
+  const grounding = asRecord(candidate.groundingMetadata);
+  const searchQueries = getArray(grounding.webSearchQueries).filter(
+    (query): query is string => typeof query === 'string'
+  );
+  const sources = getArray(grounding.groundingChunks)
+    .map(chunk => {
+      if (!isRecord(chunk)) return null;
+      const web = asRecord(chunk.web);
+      const title = typeof web.title === 'string' ? web.title : '';
+      const url = typeof web.uri === 'string' ? web.uri : '';
+      return title && url ? { title, url } : null;
+    })
+    .filter((source): source is { title: string; url: string } => Boolean(source));
+  const urlContext = asRecord(candidate.urlContextMetadata);
+  const urlsRetrieved = getArray(urlContext.url_metadata)
+    .map(meta => {
+      if (!isRecord(meta)) return null;
+      const url = typeof meta.retrieved_url === 'string' ? meta.retrieved_url : '';
+      const statusValue = meta.url_retrieval_status;
+      const status = typeof statusValue === 'string' ? statusValue : 'UNKNOWN';
+      return url ? { url, status } : null;
+    })
+    .filter((entry): entry is { url: string; status: string } => Boolean(entry));
 
   return {
     parts,
@@ -263,26 +305,21 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
     try {
       const model = getParam<string>('model', 'gemini-3-flash');
       const messagesParam = getParam<{ message?: Array<{ role?: string; content?: string }> }>('messages', {});
-      const builtInTools = getParam<Record<string, any>>('builtInTools', {});
-      const options = getParam<Record<string, any>>('options', {});
+      const builtInTools = getParam<UnknownRecord>('builtInTools', {});
+      const options = getParam<UnknownRecord>('options', {});
       const simplifyOutput = getParam<boolean>('simplifyOutput', false);
       const outputContentAsJson = getParam<boolean>('outputContentAsJson', false);
-      const maxTokens = typeof options.maxTokens === 'number' ? options.maxTokens : 512;
-      const temperature = typeof options.temperature === 'number' ? options.temperature : 0.7;
-      const topP = typeof options.topP === 'number' ? options.topP : 1;
-      const topK = typeof options.topK === 'number' ? options.topK : 0;
-      const stopSequencesRaw = typeof options.stopSequences === 'string' ? options.stopSequences : '';
-      const legacyParams = this.getNode().parameters as Record<string, any>;
-      const legacyEnableWebSearch = typeof legacyParams.enableWebSearch === 'boolean' ? legacyParams.enableWebSearch : undefined;
-      const enableWebSearch =
-        typeof builtInTools.googleSearch === 'boolean' ? builtInTools.googleSearch : legacyEnableWebSearch ?? false;
+      const maxTokens = getNumberProp(options, 'maxTokens') ?? 512;
+      const temperature = getNumberProp(options, 'temperature') ?? 0.7;
+      const topP = getNumberProp(options, 'topP') ?? 1;
+      const topK = getNumberProp(options, 'topK') ?? 0;
+      const stopSequencesRaw = getStringProp(options, 'stopSequences') ?? '';
+      const legacyParams = asRecord(this.getNode().parameters);
+      const legacyEnableWebSearch = getBooleanProp(legacyParams, 'enableWebSearch');
+      const enableWebSearch = getBooleanProp(builtInTools, 'googleSearch') ?? legacyEnableWebSearch ?? false;
       const endpointPreference = getParam<string>('endpoint', 'auto');
       const systemMessage =
-        typeof options.systemMessage === 'string'
-          ? options.systemMessage
-          : typeof legacyParams.systemPrompt === 'string'
-            ? legacyParams.systemPrompt
-            : '';
+        getStringProp(options, 'systemMessage') ?? getStringProp(legacyParams, 'systemPrompt') ?? '';
 
       if (!isGeminiModel(model)) {
         throw new NodeOperationError(
@@ -299,7 +336,7 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
         }))
         .filter(message => message.content.trim().length > 0);
 
-      const legacyPrompt = typeof legacyParams.prompt === 'string' ? legacyParams.prompt : '';
+      const legacyPrompt = getStringProp(legacyParams, 'prompt') ?? '';
       const messages =
         normalizedMessages.length > 0
           ? normalizedMessages
@@ -321,24 +358,16 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const sessionSeed = messages.map(message => message.content).join('|') || legacyPrompt || `${i}`;
       const sessionId = deriveSessionId(sessionSeed);
 
-      const generationConfig: Record<string, any> = {};
-      if (typeof maxTokens === 'number') {
-        generationConfig.maxOutputTokens = Math.min(maxTokens, GEMINI_MAX_OUTPUT_TOKENS);
-      }
-      if (temperature !== undefined) {
-        generationConfig.temperature = temperature;
-      }
-      if (topP !== undefined) {
-        generationConfig.topP = topP;
-      }
-      if (topK !== undefined) {
-        generationConfig.topK = topK;
-      }
+      const generationConfig: Record<string, unknown> = {};
+      generationConfig.maxOutputTokens = Math.min(maxTokens, GEMINI_MAX_OUTPUT_TOKENS);
+      generationConfig.temperature = temperature;
+      generationConfig.topP = topP;
+      generationConfig.topK = topK;
       if (stopSequences.length > 0) {
         generationConfig.stopSequences = stopSequences;
       }
 
-      const googleRequest: Record<string, any> = {
+      const googleRequest: Record<string, unknown> = {
         contents: buildGeminiContents(messages),
         generationConfig,
       };
@@ -388,7 +417,7 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
           : { text: parsed.text }
         : fullOutput;
 
-      returnData.push({ json: output as any });
+      returnData.push({ json: output as IDataObject });
     } catch (error) {
       if (error instanceof NodeApiError || error instanceof NodeOperationError) {
         throw error;

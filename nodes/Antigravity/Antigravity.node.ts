@@ -13,10 +13,12 @@ export class Antigravity implements INodeType {
   description: INodeTypeDescription = {
     displayName: 'Antigravity',
     name: 'antigravity',
-    icon: 'file:antigravity.png',
+    icon: 'file:antigravity.svg',
     group: ['input'],
     version: 1,
+    subtitle: '={{ $parameter["operation"] + ": " + $parameter["resource"] }}',
     description: 'Call Antigravity Cloud Code models',
+    usableAsTool: true,
     defaults: {
       name: 'Antigravity',
     },
@@ -28,9 +30,10 @@ export class Antigravity implements INodeType {
         displayName: 'Resource',
         name: 'resource',
         type: 'options',
+        noDataExpression: true,
         options: [
           { name: 'Text', value: 'text' },
-          { name: 'Models', value: 'models' },
+          { name: 'Model', value: 'model' },
         ],
         default: 'text',
       },
@@ -43,7 +46,8 @@ export class Antigravity implements INodeType {
             resource: ['text'],
           },
         },
-        options: [{ name: 'Message a Model', value: 'generate' }],
+        noDataExpression: true,
+        options: [{ name: 'Message a Model', value: 'generate', action: 'Message a model' }],
         default: 'generate',
       },
       {
@@ -52,10 +56,11 @@ export class Antigravity implements INodeType {
         type: 'options',
         displayOptions: {
           show: {
-            resource: ['models'],
+            resource: ['model'],
           },
         },
-        options: [{ name: 'List Models', value: 'listModels' }],
+        noDataExpression: true,
+        options: [{ name: 'List Models', value: 'listModels', action: 'List models' }],
         default: 'listModels',
       },
       ...descriptions,

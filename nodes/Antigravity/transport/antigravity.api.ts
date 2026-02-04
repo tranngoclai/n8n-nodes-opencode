@@ -1,6 +1,7 @@
 import * as crypto from 'crypto';
 import {
   NodeOperationError,
+  sleep,
   type IExecuteFunctions,
   type IHttpRequestOptions,
   type ILoadOptionsFunctions,
@@ -17,15 +18,42 @@ const CLIENT_METADATA = {
   pluginType: 'GEMINI',
 } as const;
 const CLIENT_METADATA_JSON = JSON.stringify(CLIENT_METADATA);
-const DEBUG_N8N =
-  process.env.ANTIGRAVITY_N8N_DEBUG === 'true' ||
-  process.env.ANTIGRAVITY_N8N_DEBUG === '1' ||
-  process.env.DEBUG_ANTIGRAVITY_N8N === 'true' ||
-  process.env.DEBUG_ANTIGRAVITY_N8N === '1';
 const RATE_LIMIT_MAX_RETRIES = 2;
 const RATE_LIMIT_BASE_DELAY_MS = 1000;
 const RATE_LIMIT_MAX_DELAY_MS = 15000;
 const RATE_LIMIT_MAX_WAIT_MS = 120000;
+
+type UnknownRecord = Record<string, unknown>;
+type ProjectCacheEntry = { projectId: string; ts: number };
+type ProjectCache = Record<string, ProjectCacheEntry>;
+type StaticData = Record<string, unknown> & { projectCache?: ProjectCache };
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function toStringValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  return undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function getArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 
 const ANTIGRAVITY_SYSTEM_INSTRUCTION =
   'You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.' +
@@ -33,9 +61,7 @@ const ANTIGRAVITY_SYSTEM_INSTRUCTION =
   '**Absolute paths only****Proactiveness**';
 
 export function getPlatformUserAgent(): string {
-  const os = process.platform;
-  const architecture = process.arch;
-  return `antigravity/1.15.8 ${os}/${architecture}`;
+  return 'antigravity/1.15.8';
 }
 
 export function getModelFamily(model: string): 'gemini' | 'unknown' {
@@ -57,14 +83,15 @@ export function deriveSessionId(seed: string): string {
   return crypto.createHash('sha256').update(seed).digest('hex').slice(0, 16);
 }
 
-function extractRefreshToken(credentials: Record<string, any> | null | undefined): string | null {
+function extractRefreshToken(credentials: UnknownRecord | null | undefined): string | null {
   if (!credentials) return null;
-  const oauthTokenData = credentials.oauthTokenData || credentials.tokenData || null;
+  const record = asRecord(credentials);
+  const oauthTokenData = asRecord(record.oauthTokenData ?? record.tokenData);
   return (
-    oauthTokenData?.refresh_token ||
-    oauthTokenData?.refreshToken ||
-    credentials.refreshToken ||
-    credentials.refresh_token ||
+    getString(oauthTokenData.refresh_token) ??
+    getString(oauthTokenData.refreshToken) ??
+    getString(record.refreshToken) ??
+    getString(record.refresh_token) ??
     null
   );
 }
@@ -81,7 +108,7 @@ function parseRefreshParts(refresh: string | null): { refreshToken: string; proj
   };
 }
 
-export function buildHeaders(model: string): Record<string, string> {
+export function buildHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'User-Agent': getPlatformUserAgent(),
@@ -92,32 +119,25 @@ export function buildHeaders(model: string): Record<string, string> {
   return headers;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function debugLog(message: string, data?: unknown) {
-  if (!DEBUG_N8N) return;
-  if (data !== undefined) {
-    console.log(`[Antigravity n8n] ${message}`, data);
-  } else {
-    console.log(`[Antigravity n8n] ${message}`);
-  }
-}
-
-function getHeaderValue(headers: any, name: string): string | undefined {
+function getHeaderValue(headers: unknown, name: string): string | undefined {
   if (!headers) return undefined;
-  if (typeof headers.get === 'function') {
-    return headers.get(name) || headers.get(name.toLowerCase()) || undefined;
+  if (isRecord(headers) && typeof (headers as { get?: unknown }).get === 'function') {
+    const getter = (headers as { get: (key: string) => unknown }).get;
+    const value = getter(name) ?? getter(name.toLowerCase());
+    if (value === undefined || value === null) return undefined;
+    return Array.isArray(value) ? String(value[0]) : String(value);
   }
-  const direct = headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()];
-  if (Array.isArray(direct)) return direct[0];
+  const record = asRecord(headers);
+  const direct = record[name] ?? record[name.toLowerCase()] ?? record[name.toUpperCase()];
+  if (Array.isArray(direct)) return direct.length > 0 ? String(direct[0]) : undefined;
   if (direct === undefined || direct === null) return undefined;
   return String(direct);
 }
 
-function extractErrorText(error: any): string {
-  const body = error?.response?.body ?? error?.response?.data ?? error?.body ?? error?.message ?? '';
+function extractErrorText(error: unknown): string {
+  const errorRecord = asRecord(error);
+  const response = asRecord(errorRecord.response);
+  const body = response.body ?? response.data ?? errorRecord.body ?? errorRecord.message ?? '';
   if (typeof body === 'string') return body;
   try {
     return JSON.stringify(body);
@@ -126,18 +146,18 @@ function extractErrorText(error: any): string {
   }
 }
 
-function getStatusCode(error: any): number | null {
-  return (
-    error?.statusCode ||
-    error?.response?.statusCode ||
-    error?.response?.status ||
-    error?.httpStatusCode ||
-    null
-  );
+function getStatusCode(error: unknown): number | null {
+  const errorRecord = asRecord(error);
+  const response = asRecord(errorRecord.response);
+  const status =
+    errorRecord.statusCode ?? response.statusCode ?? response.status ?? errorRecord.httpStatusCode ?? null;
+  return typeof status === 'number' ? status : null;
 }
 
-function parseRetryAfterMs(error: any, errorText: string): number | null {
-  const headers = error?.response?.headers ?? error?.headers ?? null;
+function parseRetryAfterMs(error: unknown, errorText: string): number | null {
+  const errorRecord = asRecord(error);
+  const response = asRecord(errorRecord.response);
+  const headers = response.headers ?? errorRecord.headers ?? null;
   const retryAfter = getHeaderValue(headers, 'retry-after');
   if (retryAfter) {
     const seconds = parseInt(retryAfter, 10);
@@ -184,19 +204,12 @@ function parseRetryAfterMs(error: any, errorText: string): number | null {
   return null;
 }
 
-function formatErrorSnippet(errorText: string, maxLen = 300): string {
-  if (!errorText) return '';
-  const trimmed = errorText.replace(/\s+/g, ' ').trim();
-  if (trimmed.length <= maxLen) return trimmed;
-  return `${trimmed.slice(0, maxLen)}…`;
-}
-
-function parseThinkingSseToGoogle(bodyText: string): Record<string, any> {
+function parseThinkingSseToGoogle(bodyText: string): Record<string, unknown> {
   let accumulatedThinkingText = '';
   let accumulatedThinkingSignature = '';
   let accumulatedText = '';
-  const finalParts: Array<Record<string, any>> = [];
-  let usageMetadata: Record<string, any> = {};
+  const finalParts: Array<Record<string, unknown>> = [];
+  let usageMetadata: Record<string, unknown> = {};
   let finishReason = 'STOP';
 
   const flushThinking = () => {
@@ -225,43 +238,48 @@ function parseThinkingSseToGoogle(bodyText: string): Record<string, any> {
     if (!jsonText || jsonText === '[DONE]') continue;
 
     try {
-      const data = JSON.parse(jsonText);
-      const innerResponse = data?.response || data;
+      const data = JSON.parse(jsonText) as unknown;
+      const innerResponse = isRecord(data) && 'response' in data ? (data as UnknownRecord).response : data;
+      const inner = asRecord(innerResponse);
 
-      if (innerResponse?.usageMetadata) {
-        usageMetadata = innerResponse.usageMetadata;
+      if (isRecord(inner.usageMetadata)) {
+        usageMetadata = inner.usageMetadata;
       }
 
-      const candidates = innerResponse?.candidates || [];
-      const firstCandidate = candidates[0] || {};
-      if (firstCandidate.finishReason) {
-        finishReason = firstCandidate.finishReason;
+      const candidates = getArray(inner.candidates);
+      const firstCandidate = isRecord(candidates[0]) ? (candidates[0] as UnknownRecord) : {};
+      const finish = getString(firstCandidate.finishReason);
+      if (finish) {
+        finishReason = finish;
       }
 
-      const parts = firstCandidate.content?.parts || [];
+      const content = asRecord(firstCandidate.content);
+      const parts = getArray(content.parts);
       for (const part of parts) {
-        if (part?.thought === true) {
+        if (!isRecord(part)) continue;
+        if (part.thought === true) {
           flushText();
-          accumulatedThinkingText += part.text || '';
+          accumulatedThinkingText += getString(part.text) ?? '';
           if (part.thoughtSignature) {
-            accumulatedThinkingSignature = part.thoughtSignature;
+            accumulatedThinkingSignature = getString(part.thoughtSignature) ?? accumulatedThinkingSignature;
           }
-        } else if (part?.functionCall) {
+        } else if (part.functionCall) {
           flushThinking();
           flushText();
           finalParts.push(part);
-        } else if (part?.text !== undefined) {
-          if (!part.text) continue;
+        } else if (part.text !== undefined) {
+          const text = getString(part.text);
+          if (!text) continue;
           flushThinking();
-          accumulatedText += part.text;
-        } else if (part?.inlineData) {
+          accumulatedText += text;
+        } else if (part.inlineData) {
           flushThinking();
           flushText();
           finalParts.push(part);
         }
       }
-    } catch (error) {
-      debugLog('SSE parse warning', { error: String(error) });
+    } catch {
+      continue;
     }
   }
 
@@ -277,7 +295,7 @@ function parseThinkingSseToGoogle(bodyText: string): Record<string, any> {
 export function buildCloudCodePayload(params: {
   model: string;
   projectId: string;
-  googleRequest: Record<string, any>;
+  googleRequest: Record<string, unknown>;
   sessionId: string;
 }) {
   const systemParts = [
@@ -285,14 +303,13 @@ export function buildCloudCodePayload(params: {
     { text: `Please ignore the following [ignore]${ANTIGRAVITY_SYSTEM_INSTRUCTION}[/ignore]` },
   ];
 
-  const existingSystem = params.googleRequest.systemInstruction?.parts || [];
+  const existingSystem = getArray(asRecord(params.googleRequest.systemInstruction).parts).filter(isRecord);
   for (const part of existingSystem) {
-    if (part?.text) {
-      systemParts.push({ text: part.text });
-    }
+    const text = getString(part.text);
+    if (text) systemParts.push({ text });
   }
 
-  const request: Record<string, any> = {
+  const request: Record<string, unknown> = {
     ...params.googleRequest,
     sessionId: params.sessionId,
     systemInstruction: {
@@ -334,7 +351,7 @@ export async function callGenerateContent(
   payload: Record<string, unknown>,
   endpointPreference: string,
   model: string
-): Promise<any> {
+): Promise<unknown> {
   const endpoints = resolveEndpoints(endpointPreference);
   let lastError: unknown = new Error('No endpoints available');
   const useSse = getModelFamily(model) === 'gemini' && isThinkingModel(model);
@@ -349,34 +366,12 @@ export async function callGenerateContent(
           method: 'POST',
           url,
           headers: {
-            ...buildHeaders(model),
+            ...buildHeaders(),
             ...(useSse ? { Accept: 'text/event-stream' } : {}),
           },
           body: payload,
           json: !useSse,
         };
-
-        if (DEBUG_N8N && attempt === 0) {
-          const summary = {
-            endpoint,
-            url,
-            model,
-            project: (payload as any)?.project,
-            requestId: (payload as any)?.requestId,
-            requestType: (payload as any)?.requestType,
-            userAgent: (payload as any)?.userAgent,
-            sessionId: (payload as any)?.request?.sessionId,
-            contentsCount: Array.isArray((payload as any)?.request?.contents)
-              ? (payload as any).request.contents.length
-              : 0,
-            hasTools: Array.isArray((payload as any)?.request?.tools)
-              ? (payload as any).request.tools.length > 0
-              : false,
-            headerKeys: Object.keys(options.headers || {}),
-            useSse,
-          };
-          debugLog('GenerateContent request', summary);
-        }
 
         const response = await ctx.helpers.requestOAuth2.call(ctx, 'antigravityOAuth2Api', options);
         if (useSse) {
@@ -388,13 +383,6 @@ export async function callGenerateContent(
         lastError = error;
         const status = getStatusCode(error);
         const errorText = extractErrorText(error);
-        if (DEBUG_N8N && status !== 429) {
-          debugLog('Endpoint error', {
-            endpoint,
-            status,
-            error: formatErrorSnippet(errorText),
-          });
-        }
         const isRateLimit =
           status === 429 ||
           errorText.toLowerCase().includes('resource_exhausted') ||
@@ -409,19 +397,10 @@ export async function callGenerateContent(
           );
           const delayMs = retryAfterMs ?? backoff;
 
-          debugLog('Rate limit response', {
-            endpoint,
-            status,
-            retryAfterMs: retryAfterMs ?? null,
-            error: formatErrorSnippet(errorText),
-          });
-
           if (delayMs > RATE_LIMIT_MAX_WAIT_MS) {
-            debugLog('Rate limit delay too long, not retrying', { endpoint, delayMs });
             break;
           }
 
-          debugLog('Rate limit retry', { endpoint, attempt: attempt + 1, delayMs, status });
           await sleep(delayMs);
           continue;
         }
@@ -438,17 +417,17 @@ export async function fetchAvailableModels(
   ctx: IExecuteFunctions | ILoadOptionsFunctions,
   endpointPreference: string,
   projectId?: string
-): Promise<any> {
+): Promise<unknown> {
   return withEndpoints(endpointPreference, async endpoint => {
     const options: IHttpRequestOptions = {
       method: 'POST',
       url: `${endpoint}/v1internal:fetchAvailableModels`,
-      headers: buildHeaders(''),
+      headers: buildHeaders(),
       body: projectId ? { project: projectId } : {},
       json: true,
     };
 
-    return await ctx.helpers.requestOAuth2.call(ctx as any, 'antigravityOAuth2Api', options);
+    return await ctx.helpers.requestOAuth2.call(ctx, 'antigravityOAuth2Api', options);
   });
 }
 
@@ -456,16 +435,16 @@ async function loadCodeAssist(
   ctx: IExecuteFunctions,
   endpointPreference: string,
   projectId?: string
-): Promise<any> {
+): Promise<unknown> {
   return withEndpoints(endpointPreference, async endpoint => {
-    const metadata: Record<string, any> = { ...CLIENT_METADATA };
+    const metadata: Record<string, unknown> = { ...CLIENT_METADATA };
     if (projectId) {
       metadata.duetProject = projectId;
     }
     const options: IHttpRequestOptions = {
       method: 'POST',
       url: `${endpoint}/v1internal:loadCodeAssist`,
-      headers: buildHeaders(''),
+      headers: buildHeaders(),
       body: {
         metadata,
       },
@@ -488,14 +467,14 @@ async function onboardUser(
 
   for (const endpoint of endpoints) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const metadata: Record<string, any> = { ...CLIENT_METADATA };
+      const metadata: Record<string, unknown> = { ...CLIENT_METADATA };
       if (projectId) {
         metadata.duetProject = projectId;
       }
       const options: IHttpRequestOptions = {
         method: 'POST',
         url: `${endpoint}/v1internal:onboardUser`,
-        headers: buildHeaders(''),
+        headers: buildHeaders(),
         body: {
           tierId,
           metadata,
@@ -527,57 +506,45 @@ export async function getProjectId(
   ctx: IExecuteFunctions,
   endpointPreference: string
 ): Promise<string> {
-  const staticData = ctx.getWorkflowStaticData('node') as Record<string, any>;
-  const credentials = await ctx.getCredentials('antigravityOAuth2Api');
-  const overrideProjectId =
-    (process.env.ANTIGRAVITY_N8N_PROJECT_ID ||
-      process.env.ANTIGRAVITY_PROJECT_ID ||
-      process.env.ANTIGRAVITY_PROJECT ||
-      '')
-      .trim();
-  if (overrideProjectId) {
-    debugLog('Project override enabled', { projectId: overrideProjectId });
-    return overrideProjectId;
-  }
-  const refreshToken = extractRefreshToken(credentials as Record<string, any>);
+  const staticData = ctx.getWorkflowStaticData('node') as StaticData;
+  const credentials = (await ctx.getCredentials('antigravityOAuth2Api')) as UnknownRecord;
+  const refreshToken = extractRefreshToken(credentials);
   const refreshParts = parseRefreshParts(refreshToken);
   const refreshHash = refreshToken
     ? crypto.createHash('sha256').update(refreshToken).digest('hex').slice(0, 12)
     : '';
-  const baseKey = (credentials?.clientId as string) || 'default';
+  const baseKey = getString(credentials.clientId) || 'default';
   const cacheKey = refreshHash ? `${baseKey}:${refreshHash}` : baseKey;
   const cache = staticData.projectCache?.[cacheKey];
   const now = Date.now();
   const ttlMs = 24 * 60 * 60 * 1000;
-
-  debugLog('Project cache key', {
-    baseKey,
-    cacheKey,
-    hasCompositeRefresh: !!(refreshToken && refreshToken.includes('|')),
-    duetProject: refreshParts.projectId || null,
-    hasRefreshToken: !!refreshToken,
-    refreshTokenLength: refreshToken ? refreshToken.length : 0,
-    oauthTokenDataKeys: credentials?.oauthTokenData ? Object.keys(credentials.oauthTokenData) : [],
-  });
 
   if (cache && cache.projectId && now - cache.ts < ttlMs) {
     return cache.projectId;
   }
 
   const data = await loadCodeAssist(ctx, endpointPreference, refreshParts.projectId);
-  const project = data?.cloudaicompanionProject;
+  const dataRecord = asRecord(data);
+  const project = dataRecord.cloudaicompanionProject;
+  const projectRecord = isRecord(project) ? project : null;
 
   if (typeof project === 'string') {
     storeProjectCache(staticData, cacheKey, project);
     return project;
   }
-  if (project?.id) {
-    storeProjectCache(staticData, cacheKey, project.id);
-    return project.id;
+  if (projectRecord?.id) {
+    const projectId = toStringValue(projectRecord.id);
+    if (projectId) {
+      storeProjectCache(staticData, cacheKey, projectId);
+      return projectId;
+    }
   }
 
-  const allowedTiers = data?.allowedTiers || [];
-  const defaultTier = allowedTiers.find((tier: any) => tier?.isDefault)?.id || allowedTiers[0]?.id || 'free-tier';
+  const allowedTierRecords = getArray(dataRecord.allowedTiers).map(tier => asRecord(tier));
+  const defaultTier =
+    toStringValue(allowedTierRecords.find(tier => getBoolean(tier.isDefault))?.id) ||
+    toStringValue(allowedTierRecords[0]?.id) ||
+    'free-tier';
   const onboarded = await onboardUser(ctx, endpointPreference, defaultTier, refreshParts.projectId);
 
   if (onboarded) {
@@ -588,14 +555,15 @@ export async function getProjectId(
   throw new NodeOperationError(ctx.getNode(), 'Failed to discover project ID');
 }
 
-function storeProjectCache(staticData: Record<string, any>, cacheKey: string, projectId: string) {
+function storeProjectCache(staticData: StaticData, cacheKey: string, projectId: string) {
   staticData.projectCache = staticData.projectCache || {};
   staticData.projectCache[cacheKey] = { projectId, ts: Date.now() };
 }
 
-export function extractUsage(response: any): Record<string, unknown> | null {
-  const inner = response?.response || response;
-  const usage = inner?.usageMetadata;
+export function extractUsage(response: unknown): Record<string, unknown> | null {
+  const root = isRecord(response) && 'response' in response ? (response as UnknownRecord).response : response;
+  const inner = asRecord(root);
+  const usage = isRecord(inner.usageMetadata) ? inner.usageMetadata : null;
   if (!usage) return null;
   return {
     promptTokens: usage.promptTokenCount ?? null,

@@ -7,7 +7,7 @@ export const commonProperties: INodeProperties[] = [
     name: 'endpoint',
     type: 'options',
     options: [
-      { name: 'Auto (prod → daily)', value: 'auto' },
+      { name: 'Auto (Prod → Daily)', value: 'auto' },
       { name: 'Prod', value: 'prod' },
       { name: 'Daily', value: 'daily' },
     ],

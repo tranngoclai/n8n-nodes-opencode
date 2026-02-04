@@ -2,6 +2,9 @@
 	"name": "n8n-nodes-antigravity",
 	"version": "0.1.0",
 	"description": "Antigravity Cloud Code node with web search tool loop",
+	"author": {
+		"name": "tranlight"
+	},
 	"license": "MIT",
 	"keywords": [
 		"n8n-community-node-package"

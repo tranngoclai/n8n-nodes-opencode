@@ -25,7 +25,7 @@ Restart n8n after installation. For Docker, mount your custom extensions folder 
 
 Create an `Antigravity OAuth2 API` credential in n8n and authorize with your Google account. The credential uses a preconfigured Google OAuth client and requests offline access.
 
-Project selection is automatic. To override it, set `ANTIGRAVITY_N8N_PROJECT_ID` (or `ANTIGRAVITY_PROJECT_ID`/`ANTIGRAVITY_PROJECT`) in the n8n environment.
+Project selection is automatic.
 
 ## Usage
 

@@ -7,6 +7,16 @@ import {
 } from 'n8n-workflow';
 import { fetchAvailableModels, getModelFamily, getProjectId } from '../transport/antigravity.api';
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function asRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
 export const description: INodeProperties[] = [];
 
 export async function execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -20,13 +30,16 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const endpointPreference = getParam<string>('endpoint', 'auto');
       const projectId = await getProjectId(this, endpointPreference);
       const data = await fetchAvailableModels(this, endpointPreference, projectId);
-      const models = Object.entries((data as any)?.models || {}).map(([id, model]: [string, any]) => {
+      const dataRecord = asRecord(data);
+      const modelsRecord = isRecord(dataRecord.models) ? dataRecord.models : {};
+      const models = Object.entries(modelsRecord).map(([id, model]) => {
+        const modelRecord = asRecord(model);
         const family = getModelFamily(id);
         return {
           id,
-          displayName: model?.displayName || id,
+          displayName: typeof modelRecord.displayName === 'string' ? modelRecord.displayName : id,
           family,
-          quotaInfo: model?.quotaInfo || null,
+          quotaInfo: modelRecord.quotaInfo ?? null,
         };
       });
 
