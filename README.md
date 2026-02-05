@@ -39,6 +39,8 @@ Key parameters for `Message a Model`:
 - `Messages` (role + prompt)
 - `Built-in Tools > Google Search` to enable Google Grounding
 - `Options` for system message, max tokens, temperature, top P, top K, and stop sequences
+- `Options > Response JSON Schema (JSON)` to constrain the model output to a JSON shape
+- `Options > Response Schema Builder` to design a simple schema via fields
 - `Simplify Output` and `Output Content as JSON`
 - `Endpoint` to choose Auto, Prod, or Daily
 

@@ -12,7 +12,6 @@ import {
   callGenerateContent,
   deriveSessionId,
   GEMINI_MAX_OUTPUT_TOKENS,
-  extractUsage,
   getProjectId,
 } from '../transport/antigravity.api';
 
@@ -69,15 +68,15 @@ export const description: INodeProperties[] = [
     ],
   },
   {
-    displayName: 'Simplify Output',
-    name: 'simplifyOutput',
+    displayName: 'Output Content as JSON',
+    name: 'outputContentAsJson',
     type: 'boolean',
     default: false,
     displayOptions: SHOW_GENERATE,
   },
   {
-    displayName: 'Output Content as JSON',
-    name: 'outputContentAsJson',
+    displayName: 'Simplify Output',
+    name: 'simplifyOutput',
     type: 'boolean',
     default: false,
     displayOptions: SHOW_GENERATE,
@@ -120,7 +119,7 @@ export const description: INodeProperties[] = [
             displayName: 'Max Tokens',
             name: 'maxTokens',
             type: 'number',
-            default: 512,
+            default: GEMINI_MAX_OUTPUT_TOKENS,
           },
         ],
       },
@@ -191,13 +190,20 @@ export const description: INodeProperties[] = [
   },
 ];
 
-type SearchMetadata = {
-  searchQueries: string[];
-  sources: Array<{ title: string; url: string }>;
-  urlsRetrieved: Array<{ url: string; status: string }>;
-};
-
 type UnknownRecord = Record<string, unknown>;
+
+type MessageInput = { role?: string; content?: string };
+
+type NormalizedMessage = { role: string; content: string };
+
+type GenerationOptions = {
+  maxTokens: number;
+  temperature: number;
+  topP: number;
+  topK: number;
+  stopSequences: string[];
+  systemMessage: string;
+};
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
@@ -205,10 +211,6 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function asRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
-}
-
-function getArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
 }
 
 function getStringProp(record: UnknownRecord, key: string): string | undefined {
@@ -242,6 +244,10 @@ function getNestedBooleanProp(record: UnknownRecord, key: string): boolean | und
   return getBooleanProp(record, key) ?? getBooleanProp(getNestedRecord(record, key), key);
 }
 
+function getArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
 function isGeminiModel(model: string): boolean {
   return (model || '').toLowerCase().includes('gemini');
 }
@@ -250,65 +256,169 @@ function toGeminiRole(role: string): 'user' | 'model' {
   return role === 'assistant' ? 'model' : 'user';
 }
 
-function buildGeminiContents(messages: Array<{ role: string; content: string }>): Array<Record<string, unknown>> {
+function buildGeminiContents(messages: NormalizedMessage[]): Array<Record<string, unknown>> {
   return messages.map(message => ({
     role: toGeminiRole(message.role),
     parts: [{ text: message.content }],
   }));
 }
 
-function parseGeminiResponse(response: unknown): {
-  parts: Array<Record<string, unknown>>;
-  text: string;
-  stopReason: string | null;
-  search: SearchMetadata;
-} {
-  const root = isRecord(response) && 'response' in response ? (response as UnknownRecord).response : response;
-  const inner = asRecord(root);
-  const candidates = getArray(inner.candidates);
-  const candidate = isRecord(candidates[0]) ? (candidates[0] as UnknownRecord) : {};
-  const content = asRecord(candidate.content);
-  const parts = getArray(content.parts).filter(isRecord) as Array<Record<string, unknown>>;
-  const text = parts
-    .filter(part => part.text !== undefined && part.thought !== true)
-    .map(part => (typeof part.text === 'string' ? part.text : ''))
-    .join('');
-  const stopReason = typeof candidate.finishReason === 'string' ? candidate.finishReason : null;
+function parseStopSequences(stopSequencesRaw: string): string[] {
+  return stopSequencesRaw
+    .split(',')
+    .map(value => value.trim())
+    .filter(Boolean);
+}
 
-  const grounding = asRecord(candidate.groundingMetadata);
-  const searchQueries = getArray(grounding.webSearchQueries).filter(
-    (query): query is string => typeof query === 'string'
-  );
-  const sources = getArray(grounding.groundingChunks)
-    .map(chunk => {
-      if (!isRecord(chunk)) return null;
-      const web = asRecord(chunk.web);
-      const title = typeof web.title === 'string' ? web.title : '';
-      const url = typeof web.uri === 'string' ? web.uri : '';
-      return title && url ? { title, url } : null;
-    })
-    .filter((source): source is { title: string; url: string } => Boolean(source));
-  const urlContext = asRecord(candidate.urlContextMetadata);
-  const urlsRetrieved = getArray(urlContext.url_metadata)
-    .map(meta => {
-      if (!isRecord(meta)) return null;
-      const url = typeof meta.retrieved_url === 'string' ? meta.retrieved_url : '';
-      const statusValue = meta.url_retrieval_status;
-      const status = typeof statusValue === 'string' ? statusValue : 'UNKNOWN';
-      return url ? { url, status } : null;
-    })
-    .filter((entry): entry is { url: string; status: string } => Boolean(entry));
+function resolveGenerationOptions(options: UnknownRecord, legacyParams: UnknownRecord): GenerationOptions {
+  const maxTokens = getNestedNumberProp(options, 'maxTokens') ?? GEMINI_MAX_OUTPUT_TOKENS;
+  const temperature = getNestedNumberProp(options, 'temperature') ?? 0.7;
+  const topP = getNestedNumberProp(options, 'topP') ?? 1;
+  const topK = getNestedNumberProp(options, 'topK') ?? 1;
+  const stopSequencesRaw = getNestedStringProp(options, 'stopSequences') ?? '';
+  const systemMessage = getNestedStringProp(options, 'systemMessage') ?? getStringProp(legacyParams, 'systemPrompt') ?? '';
 
   return {
-    parts,
-    text,
-    stopReason,
-    search: {
-      searchQueries,
-      sources: sources as Array<{ title: string; url: string }>,
-      urlsRetrieved: urlsRetrieved as Array<{ url: string; status: string }>,
-    },
+    maxTokens,
+    temperature,
+    topP,
+    topK,
+    stopSequences: parseStopSequences(stopSequencesRaw),
+    systemMessage,
   };
+}
+
+function resolveWebSearchEnabled(builtInTools: UnknownRecord, legacyParams: UnknownRecord): boolean {
+  return getNestedBooleanProp(builtInTools, 'googleSearch') ?? getBooleanProp(legacyParams, 'enableWebSearch') ?? false;
+}
+
+function resolveMessages(messagesParam: { message?: MessageInput[] }, legacyPrompt: string): NormalizedMessage[] {
+  const messageItems = Array.isArray(messagesParam.message) ? messagesParam.message : [];
+  const normalizedMessages = messageItems
+    .map(message => ({
+      role: message?.role || 'user',
+      content: typeof message?.content === 'string' ? message.content : '',
+    }))
+    .filter(message => message.content.trim().length > 0);
+
+  if (normalizedMessages.length > 0) {
+    return normalizedMessages;
+  }
+
+  if (legacyPrompt) {
+    return [{ role: 'user', content: legacyPrompt }];
+  }
+
+  return [];
+}
+
+function buildSessionSeed(messages: NormalizedMessage[], legacyPrompt: string, itemIndex: number): string {
+  const combinedMessageContent = messages.map(message => message.content).join('|');
+  if (combinedMessageContent) {
+    return combinedMessageContent;
+  }
+  if (legacyPrompt) {
+    return legacyPrompt;
+  }
+  return `${itemIndex}`;
+}
+
+function buildGenerationConfig(options: GenerationOptions, outputContentAsJson: boolean): Record<string, unknown> {
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: Math.min(options.maxTokens, GEMINI_MAX_OUTPUT_TOKENS),
+    temperature: options.temperature,
+    topP: options.topP,
+    topK: options.topK,
+  };
+
+  if (outputContentAsJson) {
+    generationConfig.responseMimeType = 'application/json';
+  }
+
+  if (options.stopSequences.length > 0) {
+    generationConfig.stopSequences = options.stopSequences;
+  }
+
+  return generationConfig;
+}
+
+type OutputValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | object
+  | IDataObject
+  | Array<string | number | boolean | null | undefined | object>
+  | IDataObject[];
+
+function extractFirstCandidateText(response: unknown): string | undefined {
+  if (!isRecord(response)) return undefined;
+  const responseRecord = isRecord(response.response) ? (response.response as UnknownRecord) : response;
+  const candidates = getArray(responseRecord.candidates);
+  if (!candidates.length) return undefined;
+  const firstCandidate = candidates[0];
+  if (!isRecord(firstCandidate)) return undefined;
+  const content = isRecord(firstCandidate.content) ? (firstCandidate.content as UnknownRecord) : {};
+  const parts = getArray(content.parts);
+  if (!parts.length) return undefined;
+  const textParts = parts
+    .map(part => (isRecord(part) ? getStringProp(part as UnknownRecord, 'text') : undefined))
+    .filter((value): value is string => typeof value === 'string');
+  if (!textParts.length) return undefined;
+  return textParts.join('');
+}
+
+function buildOutput(
+  response: unknown,
+  simplifyOutput: boolean,
+  outputContentAsJson: boolean
+): IDataObject {
+  let parsedContent: OutputValue | undefined;
+  let jsonParseStatus: 'success' | 'failed' | undefined;
+  if (outputContentAsJson) {
+    const text = extractFirstCandidateText(response) ?? '';
+    try {
+      parsedContent = JSON.parse(text) as OutputValue;
+      jsonParseStatus = 'success';
+    } catch {
+      jsonParseStatus = 'failed';
+    }
+  }
+
+  if (simplifyOutput) {
+    if (outputContentAsJson) {
+      return { response: parsedContent, jsonParseStatus };
+    }
+    const text = extractFirstCandidateText(response) ?? '';
+    return { response: text };
+  }
+  if (isRecord(response)) {
+    if (outputContentAsJson) {
+      return { ...(response as IDataObject), content: parsedContent, jsonParseStatus };
+    }
+    return response as IDataObject;
+  }
+  let responseValue: OutputValue;
+  if (response === null || response === undefined) {
+    responseValue = response;
+  } else if (Array.isArray(response)) {
+    responseValue = response as Array<string | number | boolean | null | undefined | object>;
+  } else {
+    const primitive = typeof response;
+    if (primitive === 'string' || primitive === 'number' || primitive === 'boolean') {
+      responseValue = response;
+    } else if (primitive === 'object') {
+      responseValue = response as object;
+    } else {
+      responseValue = String(response);
+    }
+  }
+  if (outputContentAsJson) {
+    return { response: responseValue, jsonParseStatus };
+  }
+  return { response: responseValue };
 }
 
 export async function execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
@@ -320,22 +430,13 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
 
     try {
       const model = getParam<string>('model', 'gemini-3-flash');
-      const messagesParam = getParam<{ message?: Array<{ role?: string; content?: string }> }>('messages', {});
+      const messagesParam = getParam<{ message?: MessageInput[] }>('messages', {});
       const builtInTools = getParam<UnknownRecord>('builtInTools', {});
       const options = getParam<UnknownRecord>('options', {});
-      const simplifyOutput = getParam<boolean>('simplifyOutput', false);
       const outputContentAsJson = getParam<boolean>('outputContentAsJson', false);
-      const maxTokens = getNestedNumberProp(options, 'maxTokens') ?? 512;
-      const temperature = getNestedNumberProp(options, 'temperature') ?? 0.7;
-      const topP = getNestedNumberProp(options, 'topP') ?? 1;
-      const topK = getNestedNumberProp(options, 'topK') ?? 1;
-      const stopSequencesRaw = getNestedStringProp(options, 'stopSequences') ?? '';
-      const legacyParams = asRecord(this.getNode().parameters);
-      const legacyEnableWebSearch = getBooleanProp(legacyParams, 'enableWebSearch');
-      const enableWebSearch = getNestedBooleanProp(builtInTools, 'googleSearch') ?? legacyEnableWebSearch ?? false;
+      const simplifyOutput = getParam<boolean>('simplifyOutput', false);
       const endpointPreference = getParam<string>('endpoint', 'auto');
-      const systemMessage =
-        getNestedStringProp(options, 'systemMessage') ?? getStringProp(legacyParams, 'systemPrompt') ?? '';
+      const legacyParams = asRecord(this.getNode().parameters);
 
       if (!isGeminiModel(model)) {
         throw new NodeOperationError(
@@ -344,52 +445,26 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
         );
       }
 
-      const messageItems = Array.isArray(messagesParam.message) ? messagesParam.message : [];
-      const normalizedMessages = messageItems
-        .map(message => ({
-          role: message?.role || 'user',
-          content: typeof message?.content === 'string' ? message.content : '',
-        }))
-        .filter(message => message.content.trim().length > 0);
-
       const legacyPrompt = getStringProp(legacyParams, 'prompt') ?? '';
-      const messages =
-        normalizedMessages.length > 0
-          ? normalizedMessages
-          : legacyPrompt
-            ? [{ role: 'user', content: legacyPrompt }]
-            : [];
+      const messages = resolveMessages(messagesParam, legacyPrompt);
 
       if (!messages.length) {
         throw new NodeOperationError(this.getNode(), 'At least one message is required');
       }
 
+      const enableWebSearch = resolveWebSearchEnabled(builtInTools, legacyParams);
+      const generationOptions = resolveGenerationOptions(options, legacyParams);
       const projectId = await getProjectId(this, endpointPreference);
-
-      const stopSequences = stopSequencesRaw
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
-
-      const sessionSeed = messages.map(message => message.content).join('|') || legacyPrompt || `${i}`;
+      const sessionSeed = buildSessionSeed(messages, legacyPrompt, i);
       const sessionId = deriveSessionId(sessionSeed);
-
-      const generationConfig: Record<string, unknown> = {};
-      generationConfig.maxOutputTokens = Math.min(maxTokens, GEMINI_MAX_OUTPUT_TOKENS);
-      generationConfig.temperature = temperature;
-      generationConfig.topP = topP;
-      generationConfig.topK = topK;
-      if (stopSequences.length > 0) {
-        generationConfig.stopSequences = stopSequences;
-      }
 
       const googleRequest: Record<string, unknown> = {
         contents: buildGeminiContents(messages),
-        generationConfig,
+        generationConfig: buildGenerationConfig(generationOptions, outputContentAsJson),
       };
 
-      if (systemMessage) {
-        googleRequest.systemInstruction = { parts: [{ text: systemMessage }] };
+      if (generationOptions.systemMessage) {
+        googleRequest.systemInstruction = { parts: [{ text: generationOptions.systemMessage }] };
       }
 
       if (enableWebSearch) {
@@ -404,36 +479,9 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       });
 
       const response = await callGenerateContent(this, payload, endpointPreference, model);
-      const parsed = parseGeminiResponse(response);
-      const searchMetadata = enableWebSearch
-        ? {
-            searchQueries: parsed.search.searchQueries,
-            sources: parsed.search.sources,
-            urlsRetrieved: parsed.search.urlsRetrieved,
-          }
-        : null;
+      const output = buildOutput(response, simplifyOutput, outputContentAsJson);
 
-      const fullOutput = {
-        text: parsed.text,
-        model,
-        usage: extractUsage(response),
-        raw: response,
-        stopReason: parsed.stopReason || undefined,
-        content: parsed.parts.length > 0 ? parsed.parts : undefined,
-        ...(searchMetadata ?? {}),
-      };
-
-      const output = simplifyOutput
-        ? outputContentAsJson
-          ? {
-              text: parsed.text,
-              content: parsed.parts.length > 0 ? parsed.parts : undefined,
-              ...(searchMetadata ?? {}),
-            }
-          : { text: parsed.text }
-        : fullOutput;
-
-      returnData.push({ json: output as IDataObject });
+      returnData.push({ json: output });
     } catch (error) {
       if (error instanceof NodeApiError || error instanceof NodeOperationError) {
         throw error;

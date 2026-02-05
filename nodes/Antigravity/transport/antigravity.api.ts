@@ -11,7 +11,7 @@ const ANTIGRAVITY_ENDPOINT_PROD = 'https://cloudcode-pa.googleapis.com';
 const ANTIGRAVITY_ENDPOINT_DAILY = 'https://daily-cloudcode-pa.googleapis.com';
 const ANTIGRAVITY_ENDPOINTS = [ANTIGRAVITY_ENDPOINT_PROD, ANTIGRAVITY_ENDPOINT_DAILY];
 const GOOGLE_API_CLIENT = 'google-cloud-sdk vscode_cloudshelleditor/0.1';
-export const GEMINI_MAX_OUTPUT_TOKENS = 16384;
+export const GEMINI_MAX_OUTPUT_TOKENS = 65535;
 const CLIENT_METADATA = {
   ideType: 'IDE_UNSPECIFIED',
   platform: 'PLATFORM_UNSPECIFIED',
