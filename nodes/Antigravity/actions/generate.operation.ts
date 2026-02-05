@@ -226,6 +226,22 @@ function getBooleanProp(record: UnknownRecord, key: string): boolean | undefined
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function getNestedRecord(record: UnknownRecord, key: string): UnknownRecord {
+  return isRecord(record[key]) ? (record[key] as UnknownRecord) : {};
+}
+
+function getNestedStringProp(record: UnknownRecord, key: string): string | undefined {
+  return getStringProp(record, key) ?? getStringProp(getNestedRecord(record, key), key);
+}
+
+function getNestedNumberProp(record: UnknownRecord, key: string): number | undefined {
+  return getNumberProp(record, key) ?? getNumberProp(getNestedRecord(record, key), key);
+}
+
+function getNestedBooleanProp(record: UnknownRecord, key: string): boolean | undefined {
+  return getBooleanProp(record, key) ?? getBooleanProp(getNestedRecord(record, key), key);
+}
+
 function isGeminiModel(model: string): boolean {
   return (model || '').toLowerCase().includes('gemini');
 }
@@ -309,17 +325,17 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const options = getParam<UnknownRecord>('options', {});
       const simplifyOutput = getParam<boolean>('simplifyOutput', false);
       const outputContentAsJson = getParam<boolean>('outputContentAsJson', false);
-      const maxTokens = getNumberProp(options, 'maxTokens') ?? 512;
-      const temperature = getNumberProp(options, 'temperature') ?? 0.7;
-      const topP = getNumberProp(options, 'topP') ?? 1;
-      const topK = getNumberProp(options, 'topK') ?? 0;
-      const stopSequencesRaw = getStringProp(options, 'stopSequences') ?? '';
+      const maxTokens = getNestedNumberProp(options, 'maxTokens') ?? 512;
+      const temperature = getNestedNumberProp(options, 'temperature') ?? 0.7;
+      const topP = getNestedNumberProp(options, 'topP') ?? 1;
+      const topK = getNestedNumberProp(options, 'topK') ?? 1;
+      const stopSequencesRaw = getNestedStringProp(options, 'stopSequences') ?? '';
       const legacyParams = asRecord(this.getNode().parameters);
       const legacyEnableWebSearch = getBooleanProp(legacyParams, 'enableWebSearch');
-      const enableWebSearch = getBooleanProp(builtInTools, 'googleSearch') ?? legacyEnableWebSearch ?? false;
+      const enableWebSearch = getNestedBooleanProp(builtInTools, 'googleSearch') ?? legacyEnableWebSearch ?? false;
       const endpointPreference = getParam<string>('endpoint', 'auto');
       const systemMessage =
-        getStringProp(options, 'systemMessage') ?? getStringProp(legacyParams, 'systemPrompt') ?? '';
+        getNestedStringProp(options, 'systemMessage') ?? getStringProp(legacyParams, 'systemPrompt') ?? '';
 
       if (!isGeminiModel(model)) {
         throw new NodeOperationError(
