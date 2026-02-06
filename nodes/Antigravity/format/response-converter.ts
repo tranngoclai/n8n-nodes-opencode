@@ -27,7 +27,6 @@ export function convertGoogleToAnthropic(googleResponse, model) {
 
     // Convert parts to Anthropic content blocks
     const anthropicContent = [];
-    let hasToolCalls = false;
 
     for (const part of parts) {
         if (part.text !== undefined) {
@@ -72,7 +71,6 @@ export function convertGoogleToAnthropic(googleResponse, model) {
             }
 
             anthropicContent.push(toolUseBlock);
-            hasToolCalls = true;
         } else if (part.inlineData) {
             // Handle image content from Google format
             anthropicContent.push({
@@ -86,16 +84,8 @@ export function convertGoogleToAnthropic(googleResponse, model) {
         }
     }
 
-    // Determine stop reason
+    // Keep provider finishReason as-is (no normalization/parsing)
     const finishReason = firstCandidate.finishReason;
-    let stopReason = 'end_turn';
-    if (finishReason === 'STOP') {
-        stopReason = 'end_turn';
-    } else if (finishReason === 'MAX_TOKENS') {
-        stopReason = 'max_tokens';
-    } else if (finishReason === 'TOOL_USE' || hasToolCalls) {
-        stopReason = 'tool_use';
-    }
 
     // Extract usage metadata
     // Note: Antigravity's promptTokenCount is the TOTAL (includes cached),
@@ -110,7 +100,7 @@ export function convertGoogleToAnthropic(googleResponse, model) {
         role: 'assistant',
         content: anthropicContent.length > 0 ? anthropicContent : [{ type: 'text', text: '' }],
         model: model,
-        stop_reason: stopReason,
+        stop_reason: finishReason,
         stop_sequence: null,
         usage: {
             input_tokens: promptTokens - cachedTokens,

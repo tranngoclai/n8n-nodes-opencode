@@ -191,7 +191,7 @@ function calculateSmartBackoff(
  * @param {Array} anthropicRequest.messages - Array of message objects
  * @param {number} [anthropicRequest.max_tokens] - Maximum tokens to generate
  * @param {Object} [anthropicRequest.thinking] - Thinking configuration
- * @param {import('../account-manager/index.js').default} accountManager - The account manager instance
+ * @param {AccountManagerLike} accountManager - The account manager instance
  * @returns {Promise<Object>} Anthropic-format response object
  * @throws {Error} If max retries exceeded or no accounts available
  */

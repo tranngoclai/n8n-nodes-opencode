@@ -138,20 +138,6 @@ export class NativeModuleError extends AntigravityError {
 }
 
 /**
- * Empty response error - thrown when API returns no content
- * Used to trigger retry logic in streaming handler
- */
-export class EmptyResponseError extends AntigravityError {
-    /**
-     * @param {string} message - Error message
-     */
-    constructor(message = 'No content received from API') {
-        super(message, 'EMPTY_RESPONSE', true, {});
-        this.name = 'EmptyResponseError';
-    }
-}
-
-/**
  * Capacity exhausted error - Google's model is at capacity (not user quota)
  * Should retry on same account with shorter delay, not switch accounts immediately
  * Different from QUOTA_EXHAUSTED which indicates user's daily/hourly limit
@@ -198,16 +184,6 @@ export function isAuthError(error) {
 }
 
 /**
- * Check if an error is an empty response error
- * @param {Error} error - Error to check
- * @returns {boolean}
- */
-export function isEmptyResponseError(error) {
-    return error instanceof EmptyResponseError ||
-        error?.name === 'EmptyResponseError';
-}
-
-/**
  * Check if an error is a capacity exhausted error (model overload, not user quota)
  * This is different from quota exhaustion - capacity issues are temporary infrastructure
  * limits that should be retried on the SAME account with shorter delays
@@ -231,10 +207,8 @@ export default {
     MaxRetriesError,
     ApiError,
     NativeModuleError,
-    EmptyResponseError,
     CapacityExhaustedError,
     isRateLimitError,
     isAuthError,
-    isEmptyResponseError,
     isCapacityExhaustedError
 };

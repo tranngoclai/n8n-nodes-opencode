@@ -22,5 +22,18 @@
 		"types": ["node"],
 		"outDir": "./dist/"
 	},
-	"include": ["credentials/**/*", "nodes/**/*", "nodes/**/*.json", "package.json"]
+	"include": [
+		"credentials/**/*.ts",
+		"nodes/Antigravity/**/*.ts",
+		"nodes/Antigravity/**/*.json",
+		"nodes/Antigravity/**/*.svg",
+		"package.json"
+	],
+	"exclude": [
+		"dist",
+		"node_modules",
+		"nodes/Antigravity/account-manager/**/*",
+		"nodes/Antigravity/server.js",
+		"nodes/Antigravity/index.js"
+	]
 }

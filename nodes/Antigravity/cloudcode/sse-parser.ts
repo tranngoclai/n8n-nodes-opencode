@@ -21,7 +21,7 @@ export async function parseThinkingSSEResponse(response: Response, originalModel
     let accumulatedText = '';
     const finalParts: UnknownRecord[] = [];
     let usageMetadata: UnknownRecord = {};
-    let finishReason = 'STOP';
+    let finishReason: string | undefined;
 
     const flushThinking = () => {
         if (accumulatedThinkingText) {

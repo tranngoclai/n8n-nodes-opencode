@@ -12,8 +12,7 @@ import {
   DEFAULT_COOLDOWN_MS,
   LOAD_CODE_ASSIST_ENDPOINTS,
 } from '../constants';
-import { sendMessage } from '../cloudcode';
-import { fetchAvailableModels as fetchCloudCodeModels } from '../cloudcode/model-api';
+import { fetchAvailableModels as fetchCloudCodeModels, sendMessage } from '../cloudcode';
 import type { AccountLike, AccountManagerLike, AnthropicRequest, UnknownRecord } from '../cloudcode/types';
 
 export const GEMINI_MAX_OUTPUT_TOKENS = 65535;
@@ -31,7 +30,6 @@ type StaticData = Record<string, unknown> & { projectCache?: ProjectCache };
 interface GenerateContentOptions {
   anthropicRequest: AnthropicRequest;
   projectId: string;
-  endpointPreference: string;
   enableGoogleSearch?: boolean;
   outputContentAsJson?: boolean;
 }
@@ -261,16 +259,15 @@ function extractCredentialEmail(credentials: UnknownRecord | null | undefined): 
 
 function parseRefreshParts(
   refresh: string | null,
-): { refreshToken: string; projectId?: string; managedProjectId?: string } {
+): { refreshToken: string; projectId?: string } {
   if (!refresh || typeof refresh !== 'string') {
     return { refreshToken: '' };
   }
 
-  const [refreshToken = '', projectId = '', managedProjectId = ''] = refresh.split('|');
+  const [refreshToken = '', projectId = ''] = refresh.split('|');
   return {
     refreshToken,
     projectId: projectId || undefined,
-    managedProjectId: managedProjectId || undefined,
   };
 }
 
@@ -369,36 +366,6 @@ function buildRequestHeaders(): Record<string, string> {
   };
 }
 
-export function resolveEndpoints(preference: string): string[] {
-  const [dailyEndpoint, prodEndpoint] = ANTIGRAVITY_ENDPOINT_FALLBACKS;
-
-  if (!dailyEndpoint || !prodEndpoint) {
-    return [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
-  }
-
-  if (preference === 'prod') return [prodEndpoint, dailyEndpoint];
-  if (preference === 'daily') return [dailyEndpoint, prodEndpoint];
-  return [dailyEndpoint, prodEndpoint];
-}
-
-export async function withEndpoints<T>(
-  endpointPreference: string,
-  request: (endpoint: string) => Promise<T>,
-): Promise<T> {
-  const endpoints = resolveEndpoints(endpointPreference);
-  let lastError: unknown = new Error('No endpoints available');
-
-  for (const endpoint of endpoints) {
-    try {
-      return await request(endpoint);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-
-  throw lastError;
-}
-
 export async function callGenerateContent(
   ctx: IExecuteFunctions,
   options: GenerateContentOptions,
@@ -406,13 +373,9 @@ export async function callGenerateContent(
   const {
     anthropicRequest,
     projectId,
-    endpointPreference,
     enableGoogleSearch = false,
     outputContentAsJson = false,
   } = options;
-
-  // Cloudcode sendMessage controls endpoint retry/failover order.
-  void endpointPreference;
 
   const credentials = asRecord(await ctx.getCredentials('antigravityOAuth2Api'));
   const manager = new SingleAccountManager(
@@ -432,26 +395,17 @@ export async function callGenerateContent(
 
 export async function fetchAvailableModels(
   ctx: IExecuteFunctions | ILoadOptionsFunctions,
-  endpointPreference: string,
   projectId?: string,
 ): Promise<unknown> {
-  // Cloudcode model API controls endpoint fallback order.
-  void endpointPreference;
-
   const token = await resolveAccessToken(ctx);
   return await fetchCloudCodeModels(token, projectId ?? null);
 }
 
 async function loadCodeAssist(
   ctx: IExecuteFunctions,
-  endpointPreference: string,
   projectId?: string,
 ): Promise<unknown> {
-  const endpoints = endpointPreference === 'prod'
-    ? [...LOAD_CODE_ASSIST_ENDPOINTS]
-    : endpointPreference === 'daily'
-      ? [...LOAD_CODE_ASSIST_ENDPOINTS].reverse()
-      : [...LOAD_CODE_ASSIST_ENDPOINTS];
+  const endpoints = [...LOAD_CODE_ASSIST_ENDPOINTS];
 
   let lastError: unknown = new Error('No endpoints available');
 
@@ -483,13 +437,12 @@ async function loadCodeAssist(
 
 async function onboardUser(
   ctx: IExecuteFunctions,
-  endpointPreference: string,
   tierId: string,
   projectId?: string,
   maxAttempts = 5,
   delayMs = 2000,
 ): Promise<string | null> {
-  const endpoints = resolveEndpoints(endpointPreference);
+  const endpoints = [...ANTIGRAVITY_ENDPOINT_FALLBACKS];
 
   for (const endpoint of endpoints) {
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -533,7 +486,6 @@ async function onboardUser(
 
 export async function getProjectId(
   ctx: IExecuteFunctions,
-  endpointPreference: string,
 ): Promise<string> {
   const staticData = ctx.getWorkflowStaticData('node') as StaticData;
   const credentials = asRecord(await ctx.getCredentials('antigravityOAuth2Api'));
@@ -552,7 +504,7 @@ export async function getProjectId(
     return cache.projectId;
   }
 
-  const data = await loadCodeAssist(ctx, endpointPreference, refreshParts.projectId);
+  const data = await loadCodeAssist(ctx, refreshParts.projectId);
   const dataRecord = asRecord(data);
   const project = dataRecord.cloudaicompanionProject;
   const projectRecord = isRecord(project) ? project : null;
@@ -575,7 +527,7 @@ export async function getProjectId(
     toStringValue(allowedTierRecords.find((tier) => getBoolean(tier.isDefault))?.id) ||
     toStringValue(allowedTierRecords[0]?.id) ||
     'free-tier';
-  const onboarded = await onboardUser(ctx, endpointPreference, defaultTier, refreshParts.projectId);
+  const onboarded = await onboardUser(ctx, defaultTier, refreshParts.projectId);
 
   if (onboarded) {
     storeProjectCache(staticData, cacheKey, onboarded);
@@ -585,31 +537,7 @@ export async function getProjectId(
   throw new NodeOperationError(ctx.getNode(), 'Failed to discover project ID');
 }
 
-function storeProjectCache(staticData: StaticData, cacheKey: string, projectId: string) {
+function storeProjectCache(staticData: StaticData, cacheKey: string, projectId: string): void {
   staticData.projectCache = staticData.projectCache || {};
   staticData.projectCache[cacheKey] = { projectId, ts: Date.now() };
-}
-
-export function extractUsage(response: unknown): Record<string, unknown> | null {
-  if (!isRecord(response)) return null;
-
-  const anthropicUsage = isRecord(response.usage) ? response.usage : null;
-  if (anthropicUsage) {
-    return {
-      promptTokens: anthropicUsage.input_tokens ?? null,
-      outputTokens: anthropicUsage.output_tokens ?? null,
-      cachedTokens: anthropicUsage.cache_read_input_tokens ?? null,
-    };
-  }
-
-  const root = isRecord(response) && 'response' in response ? (response as UnknownRecord).response : response;
-  const inner = asRecord(root);
-  const usage = isRecord(inner.usageMetadata) ? inner.usageMetadata : null;
-  if (!usage) return null;
-
-  return {
-    promptTokens: usage.promptTokenCount ?? null,
-    outputTokens: usage.candidatesTokenCount ?? null,
-    cachedTokens: usage.cachedContentTokenCount ?? null,
-  };
 }

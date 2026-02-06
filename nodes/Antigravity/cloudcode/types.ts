@@ -83,14 +83,6 @@ export interface LoggerLike {
   success?: (...args: unknown[]) => void;
 }
 
-export type SseEvent =
-  | { type: 'message_start'; message: UnknownRecord }
-  | { type: 'content_block_start'; index: number; content_block: UnknownRecord }
-  | { type: 'content_block_delta'; index: number; delta: UnknownRecord }
-  | { type: 'content_block_stop'; index: number }
-  | { type: 'message_delta'; delta: UnknownRecord; usage: UnknownRecord }
-  | { type: 'message_stop' };
-
 export interface ErrorWithMessage extends Error {
   message: string;
   is429?: boolean;

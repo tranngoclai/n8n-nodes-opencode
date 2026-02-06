@@ -25,12 +25,9 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
   const returnData: INodeExecutionData[] = [];
 
   for (let i = 0; i < items.length; i++) {
-    const getParam = <T,>(name: string, fallback: T) => this.getNodeParameter(name, i, fallback) as T;
-
     try {
-      const endpointPreference = getParam<string>('endpoint', 'auto');
-      const projectId = await getProjectId(this, endpointPreference);
-      const data = await fetchAvailableModels(this, endpointPreference, projectId);
+      const projectId = await getProjectId(this);
+      const data = await fetchAvailableModels(this, projectId);
       const dataRecord = asRecord(data);
       const modelsRecord = isRecord(dataRecord.models) ? dataRecord.models : {};
       const models = Object.entries(modelsRecord)

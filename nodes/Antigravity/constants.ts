@@ -111,9 +111,6 @@ export const LOAD_CODE_ASSIST_ENDPOINTS = [
     ANTIGRAVITY_ENDPOINT_DAILY
 ];
 
-// Endpoint order for onboardUser (same as generateContent fallbacks)
-export const ONBOARD_USER_ENDPOINTS = ANTIGRAVITY_ENDPOINT_FALLBACKS;
-
 // Headers for loadCodeAssist API
 export const LOAD_CODE_ASSIST_HEADERS = ANTIGRAVITY_HEADERS;
 
@@ -144,7 +141,6 @@ export const ANTIGRAVITY_DB_PATH = getAntigravityDbPath();
 
 export const DEFAULT_COOLDOWN_MS = typedConfig?.defaultCooldownMs || (10 * 1000); // From config or 10 seconds
 export const MAX_RETRIES = typedConfig?.maxRetries || 5; // From config or 5
-export const MAX_EMPTY_RESPONSE_RETRIES = 2; // Max retries for empty API responses (from upstream)
 export const MAX_ACCOUNTS = typedConfig?.maxAccounts || 10; // From config or 10
 
 // Rate limit wait thresholds
@@ -162,7 +158,7 @@ export const EXTENDED_COOLDOWN_MS = typedConfig?.extendedCooldownMs || 60000; //
 
 // Capacity exhaustion - progressive backoff tiers for model capacity issues
 export const CAPACITY_BACKOFF_TIERS_MS: number[] = typedConfig?.capacityBackoffTiersMs || [5000, 10000, 20000, 30000, 60000];
-export const MAX_CAPACITY_RETRIES = typedConfig?.maxCapacityRetries || 5;
+export const MAX_CAPACITY_RETRIES = typedConfig?.maxCapacityRetries || 2;
 
 // Smart backoff by error type
 export const BACKOFF_BY_ERROR_TYPE: Record<Exclude<RateLimitReason, 'QUOTA_EXHAUSTED'>, number> = {
@@ -316,7 +312,6 @@ export default {
     ANTIGRAVITY_ENDPOINT_FALLBACKS,
     ANTIGRAVITY_HEADERS,
     LOAD_CODE_ASSIST_ENDPOINTS,
-    ONBOARD_USER_ENDPOINTS,
     LOAD_CODE_ASSIST_HEADERS,
     DEFAULT_PROJECT_ID,
     TOKEN_REFRESH_INTERVAL_MS,
@@ -327,7 +322,6 @@ export default {
     ANTIGRAVITY_DB_PATH,
     DEFAULT_COOLDOWN_MS,
     MAX_RETRIES,
-    MAX_EMPTY_RESPONSE_RETRIES,
     MAX_ACCOUNTS,
     MAX_WAIT_BEFORE_ERROR_MS,
     RATE_LIMIT_DEDUP_WINDOW_MS,

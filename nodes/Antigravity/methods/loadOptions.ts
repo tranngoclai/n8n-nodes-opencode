@@ -72,10 +72,9 @@ function isTextModel(model: UnknownRecord): boolean {
 }
 
 export async function getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-  const endpointPreference = (this.getCurrentNodeParameter('endpoint') as string) || 'auto';
   const resource = this.getCurrentNodeParameter('resource') as string | undefined;
   const textOnly = resource === 'text';
-  const data = await fetchAvailableModels(this, endpointPreference, undefined);
+  const data = await fetchAvailableModels(this);
   const dataRecord = asRecord(data);
   const modelsRecord = isRecord(dataRecord.models) ? dataRecord.models : {};
   const models = Object.entries(modelsRecord)

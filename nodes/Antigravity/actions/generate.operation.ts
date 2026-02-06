@@ -439,7 +439,6 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const options = getParam<UnknownRecord>('options', {});
       const outputContentAsJson = getParam<boolean>('outputContentAsJson', false);
       const simplifyOutput = getParam<boolean>('simplifyOutput', false);
-      const endpointPreference = getParam<string>('endpoint', 'auto');
       const legacyParams = asRecord(this.getNode().parameters);
 
       if (!isGeminiModel(model)) {
@@ -459,12 +458,11 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const enableWebSearch = resolveWebSearchEnabled(builtInTools, legacyParams);
       const generationOptions = resolveGenerationOptions(options, legacyParams);
       const anthropicRequest = buildAnthropicRequest(model, messages, generationOptions);
-      const projectId = await getProjectId(this, endpointPreference);
+      const projectId = await getProjectId(this);
 
       const response = await callGenerateContent(this, {
         anthropicRequest,
         projectId,
-        endpointPreference,
         enableGoogleSearch: enableWebSearch,
         outputContentAsJson,
       });

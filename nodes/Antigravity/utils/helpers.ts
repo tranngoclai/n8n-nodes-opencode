@@ -1,28 +1,11 @@
 /* eslint-disable */
 // @ts-nocheck
-import { readFileSync } from 'fs';
-import path from 'path';
 
 /**
  * Shared Utility Functions
  *
  * General-purpose helper functions used across multiple modules.
  */
-
-/**
- * Get the package version from package.json
- * @param {string} [defaultVersion='1.0.0'] - Default version if package.json cannot be read
- * @returns {string} The package version
- */
-export function getPackageVersion(defaultVersion = '1.0.0') {
-    try {
-        const packageJsonPath = path.join(__dirname, '../../package.json');
-        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-        return packageJson.version || defaultVersion;
-    } catch {
-        return defaultVersion;
-    }
-}
 
 /**
  * Format duration in milliseconds to human-readable string
