@@ -12,6 +12,7 @@ import {
   GEMINI_MAX_OUTPUT_TOKENS,
   getProjectId,
 } from '../transport/antigravity.api';
+import type { AnthropicRequest } from '../cloudcode/types';
 
 export const description: INodeProperties[] = [
   {
@@ -214,6 +215,10 @@ type AnthropicMessageRequest = {
   system?: string;
 };
 
+const JSON_CONVERSION_SYSTEM_NOTICE =
+  'Convert the provided raw text into valid JSON. Return JSON only without markdown fences or additional commentary.';
+const JSON_CONVERSION_MODEL = 'gemini-2.5-flash';
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
 }
@@ -338,6 +343,47 @@ function buildAnthropicRequest(
   return request;
 }
 
+function buildJsonConversionSystemPrompt(systemMessage?: string): string {
+  const trimmedSystemMessage = systemMessage?.trim();
+  if (!trimmedSystemMessage) {
+    return JSON_CONVERSION_SYSTEM_NOTICE;
+  }
+
+  return `${JSON_CONVERSION_SYSTEM_NOTICE}\n\n${trimmedSystemMessage}`;
+}
+
+function extractRawTextForJsonConversion(response: unknown): string {
+  const text = extractFirstResponseText(response);
+  if (typeof text === 'string' && text.trim().length > 0) {
+    return text;
+  }
+
+  if (typeof response === 'string') {
+    return response;
+  }
+
+  if (response === null || response === undefined) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(response);
+  } catch {
+    return String(response);
+  }
+}
+
+function buildJsonConversionRequest(
+  sourceRequest: AnthropicMessageRequest,
+  rawText: string,
+): AnthropicRequest {
+  return {
+    model: JSON_CONVERSION_MODEL,
+    messages: [{ role: 'user', content: rawText }],
+    system: buildJsonConversionSystemPrompt(sourceRequest.system),
+  };
+}
+
 type OutputValue =
   | string
   | number
@@ -460,12 +506,34 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       const anthropicRequest = buildAnthropicRequest(model, messages, generationOptions);
       const projectId = await getProjectId(this);
 
-      const response = await callGenerateContent(this, {
-        anthropicRequest,
-        projectId,
-        enableGoogleSearch: enableWebSearch,
-        outputContentAsJson,
-      });
+      let response: unknown;
+
+      if (outputContentAsJson) {
+        const rawResponse = await callGenerateContent(this, {
+          anthropicRequest,
+          projectId,
+          enableGoogleSearch: enableWebSearch,
+          outputContentAsJson: false,
+        });
+
+        const rawText = extractRawTextForJsonConversion(rawResponse);
+        const jsonConversionRequest = buildJsonConversionRequest(anthropicRequest, rawText);
+
+        response = await callGenerateContent(this, {
+          anthropicRequest: jsonConversionRequest,
+          projectId,
+          enableGoogleSearch: false,
+          outputContentAsJson: true,
+        });
+      } else {
+        response = await callGenerateContent(this, {
+          anthropicRequest,
+          projectId,
+          enableGoogleSearch: enableWebSearch,
+          outputContentAsJson: false,
+        });
+      }
+
       const output = buildOutput(response, simplifyOutput, outputContentAsJson);
 
       returnData.push({ json: output });
