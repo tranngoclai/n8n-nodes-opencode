@@ -41,7 +41,19 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     // before any other processing, following the pattern from Antigravity-Manager.
     const messages = cleanCacheControl(anthropicRequest.messages || []);
 
-    const { system, max_tokens, temperature, top_p, top_k, stop_sequences, tools, tool_choice, thinking } = anthropicRequest;
+    const {
+        system,
+        max_tokens,
+        temperature,
+        top_p,
+        top_k,
+        stop_sequences,
+        tools,
+        tool_choice,
+        thinking,
+        response_mime_type,
+        google_search
+    } = anthropicRequest;
     const modelName = anthropicRequest.model || '';
     const modelFamily = getModelFamily(modelName);
     const isClaudeModel = modelFamily === 'claude';
@@ -158,6 +170,9 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     if (stop_sequences && stop_sequences.length > 0) {
         googleRequest.generationConfig.stopSequences = stop_sequences;
     }
+    if (response_mime_type && typeof response_mime_type === 'string') {
+        googleRequest.generationConfig.responseMimeType = response_mime_type;
+    }
 
     // Enable thinking for thinking models (Claude and Gemini 3+)
     if (isThinking) {
@@ -245,6 +260,14 @@ export function convertAnthropicToGoogle(anthropicRequest) {
                 }
             };
         }
+    }
+
+    // n8n compatibility: allow cloudcode request flow to enable Google grounding.
+    // Cloud Code validates this as a built-in tool and does not use functionDeclarations.
+    if (google_search === true) {
+        googleRequest.tools = [{ googleSearch: {} }];
+        // Built-in Google grounding should not mix with function-calling config.
+        delete googleRequest.toolConfig;
     }
 
     // Cap max tokens for Gemini models

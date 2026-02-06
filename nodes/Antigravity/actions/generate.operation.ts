@@ -8,9 +8,7 @@ import {
 } from 'n8n-workflow';
 import { SHOW_GENERATE } from './constants';
 import {
-  buildCloudCodePayload,
   callGenerateContent,
-  deriveSessionId,
   GEMINI_MAX_OUTPUT_TOKENS,
   getProjectId,
 } from '../transport/antigravity.api';
@@ -205,6 +203,17 @@ type GenerationOptions = {
   systemMessage: string;
 };
 
+type AnthropicMessageRequest = {
+  model: string;
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  max_tokens: number;
+  temperature: number;
+  top_p: number;
+  top_k: number;
+  stop_sequences?: string[];
+  system?: string;
+};
+
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
 }
@@ -252,17 +261,6 @@ function isGeminiModel(model: string): boolean {
   return (model || '').toLowerCase().includes('gemini');
 }
 
-function toGeminiRole(role: string): 'user' | 'model' {
-  return role === 'assistant' ? 'model' : 'user';
-}
-
-function buildGeminiContents(messages: NormalizedMessage[]): Array<Record<string, unknown>> {
-  return messages.map(message => ({
-    role: toGeminiRole(message.role),
-    parts: [{ text: message.content }],
-  }));
-}
-
 function parseStopSequences(stopSequencesRaw: string): string[] {
   return stopSequencesRaw
     .split(',')
@@ -295,11 +293,11 @@ function resolveWebSearchEnabled(builtInTools: UnknownRecord, legacyParams: Unkn
 function resolveMessages(messagesParam: { message?: MessageInput[] }, legacyPrompt: string): NormalizedMessage[] {
   const messageItems = Array.isArray(messagesParam.message) ? messagesParam.message : [];
   const normalizedMessages = messageItems
-    .map(message => ({
+    .map((message) => ({
       role: message?.role || 'user',
       content: typeof message?.content === 'string' ? message.content : '',
     }))
-    .filter(message => message.content.trim().length > 0);
+    .filter((message) => message.content.trim().length > 0);
 
   if (normalizedMessages.length > 0) {
     return normalizedMessages;
@@ -312,34 +310,32 @@ function resolveMessages(messagesParam: { message?: MessageInput[] }, legacyProm
   return [];
 }
 
-function buildSessionSeed(messages: NormalizedMessage[], legacyPrompt: string, itemIndex: number): string {
-  const combinedMessageContent = messages.map(message => message.content).join('|');
-  if (combinedMessageContent) {
-    return combinedMessageContent;
-  }
-  if (legacyPrompt) {
-    return legacyPrompt;
-  }
-  return `${itemIndex}`;
-}
-
-function buildGenerationConfig(options: GenerationOptions, outputContentAsJson: boolean): Record<string, unknown> {
-  const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: Math.min(options.maxTokens, GEMINI_MAX_OUTPUT_TOKENS),
+function buildAnthropicRequest(
+  model: string,
+  messages: NormalizedMessage[],
+  options: GenerationOptions,
+): AnthropicMessageRequest {
+  const request: AnthropicMessageRequest = {
+    model,
+    messages: messages.map((message) => ({
+      role: message.role === 'assistant' ? 'assistant' : 'user',
+      content: message.content,
+    })),
+    max_tokens: Math.min(options.maxTokens, GEMINI_MAX_OUTPUT_TOKENS),
     temperature: options.temperature,
-    topP: options.topP,
-    topK: options.topK,
+    top_p: options.topP,
+    top_k: options.topK,
   };
 
-  if (outputContentAsJson) {
-    generationConfig.responseMimeType = 'application/json';
-  }
-
   if (options.stopSequences.length > 0) {
-    generationConfig.stopSequences = options.stopSequences;
+    request.stop_sequences = options.stopSequences;
   }
 
-  return generationConfig;
+  if (options.systemMessage) {
+    request.system = options.systemMessage;
+  }
+
+  return request;
 }
 
 type OutputValue =
@@ -353,19 +349,21 @@ type OutputValue =
   | Array<string | number | boolean | null | undefined | object>
   | IDataObject[];
 
-function extractFirstCandidateText(response: unknown): string | undefined {
+function extractFirstResponseText(response: unknown): string | undefined {
   if (!isRecord(response)) return undefined;
-  const responseRecord = isRecord(response.response) ? (response.response as UnknownRecord) : response;
-  const candidates = getArray(responseRecord.candidates);
-  if (!candidates.length) return undefined;
-  const firstCandidate = candidates[0];
-  if (!isRecord(firstCandidate)) return undefined;
-  const content = isRecord(firstCandidate.content) ? (firstCandidate.content as UnknownRecord) : {};
-  const parts = getArray(content.parts);
-  if (!parts.length) return undefined;
-  const textParts = parts
-    .map(part => (isRecord(part) ? getStringProp(part as UnknownRecord, 'text') : undefined))
+
+  const content = getArray(response.content);
+  if (!content.length) return undefined;
+
+  const textParts = content
+    .map((block) => {
+      if (!isRecord(block)) return undefined;
+      const type = getStringProp(block as UnknownRecord, 'type');
+      if (type !== 'text') return undefined;
+      return getStringProp(block as UnknownRecord, 'text');
+    })
     .filter((value): value is string => typeof value === 'string');
+
   if (!textParts.length) return undefined;
   return textParts.join('');
 }
@@ -373,12 +371,13 @@ function extractFirstCandidateText(response: unknown): string | undefined {
 function buildOutput(
   response: unknown,
   simplifyOutput: boolean,
-  outputContentAsJson: boolean
+  outputContentAsJson: boolean,
 ): IDataObject {
   let parsedContent: OutputValue | undefined;
   let jsonParseStatus: 'success' | 'failed' | undefined;
+
   if (outputContentAsJson) {
-    const text = extractFirstCandidateText(response) ?? '';
+    const text = extractFirstResponseText(response) ?? '';
     try {
       parsedContent = JSON.parse(text) as OutputValue;
       jsonParseStatus = 'success';
@@ -391,15 +390,18 @@ function buildOutput(
     if (outputContentAsJson) {
       return { response: parsedContent, jsonParseStatus };
     }
-    const text = extractFirstCandidateText(response) ?? '';
+
+    const text = extractFirstResponseText(response) ?? '';
     return { response: text };
   }
+
   if (isRecord(response)) {
     if (outputContentAsJson) {
       return { ...(response as IDataObject), content: parsedContent, jsonParseStatus };
     }
     return response as IDataObject;
   }
+
   let responseValue: OutputValue;
   if (response === null || response === undefined) {
     responseValue = response;
@@ -415,9 +417,11 @@ function buildOutput(
       responseValue = String(response);
     }
   }
+
   if (outputContentAsJson) {
     return { response: responseValue, jsonParseStatus };
   }
+
   return { response: responseValue };
 }
 
@@ -441,7 +445,7 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
       if (!isGeminiModel(model)) {
         throw new NodeOperationError(
           this.getNode(),
-          `Only Gemini models are supported. Received: ${model || 'unknown'}`
+          `Only Gemini models are supported. Received: ${model || 'unknown'}`,
         );
       }
 
@@ -454,31 +458,16 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
 
       const enableWebSearch = resolveWebSearchEnabled(builtInTools, legacyParams);
       const generationOptions = resolveGenerationOptions(options, legacyParams);
+      const anthropicRequest = buildAnthropicRequest(model, messages, generationOptions);
       const projectId = await getProjectId(this, endpointPreference);
-      const sessionSeed = buildSessionSeed(messages, legacyPrompt, i);
-      const sessionId = deriveSessionId(sessionSeed);
 
-      const googleRequest: Record<string, unknown> = {
-        contents: buildGeminiContents(messages),
-        generationConfig: buildGenerationConfig(generationOptions, outputContentAsJson),
-      };
-
-      if (generationOptions.systemMessage) {
-        googleRequest.systemInstruction = { parts: [{ text: generationOptions.systemMessage }] };
-      }
-
-      if (enableWebSearch) {
-        googleRequest.tools = [{ googleSearch: {} }];
-      }
-
-      const payload = buildCloudCodePayload({
-        model,
+      const response = await callGenerateContent(this, {
+        anthropicRequest,
         projectId,
-        googleRequest,
-        sessionId,
+        endpointPreference,
+        enableGoogleSearch: enableWebSearch,
+        outputContentAsJson,
       });
-
-      const response = await callGenerateContent(this, payload, endpointPreference, model);
       const output = buildOutput(response, simplifyOutput, outputContentAsJson);
 
       returnData.push({ json: output });

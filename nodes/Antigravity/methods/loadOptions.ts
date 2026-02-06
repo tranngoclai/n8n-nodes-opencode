@@ -1,5 +1,6 @@
 import type { ILoadOptionsFunctions, INodePropertyOptions } from 'n8n-workflow';
-import { fetchAvailableModels, getModelFamily } from '../transport/antigravity.api';
+import { fetchAvailableModels } from '../transport/antigravity.api';
+import { getModelFamily } from '../constants';
 
 type UnknownRecord = Record<string, unknown>;
 

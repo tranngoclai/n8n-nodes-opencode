@@ -2,6 +2,7 @@
 	"name": "n8n-nodes-antigravity",
 	"version": "0.2.1",
 	"description": "Antigravity Cloud Code node with web search tool loop",
+	"type": "commonjs",
 	"author": {
 		"name": "tranlight"
 	},

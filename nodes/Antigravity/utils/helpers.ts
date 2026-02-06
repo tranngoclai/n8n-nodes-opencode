@@ -1,7 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
 import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
 import path from 'path';
 
 /**
@@ -17,8 +16,6 @@ import path from 'path';
  */
 export function getPackageVersion(defaultVersion = '1.0.0') {
     try {
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = path.dirname(__filename);
         const packageJsonPath = path.join(__dirname, '../../package.json');
         const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
         return packageJson.version || defaultVersion;
