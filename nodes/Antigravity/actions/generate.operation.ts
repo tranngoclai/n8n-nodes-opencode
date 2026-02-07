@@ -368,16 +368,25 @@ function extractFirstResponseText(response: unknown): string | undefined {
   return textParts.join('');
 }
 
+function stripJsonCodeFences(text: string): string {
+  const trimmed = text.trim();
+  const match = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (!match) {
+    return text;
+  }
+  return match[1].trim();
+}
+
 function buildOutput(
   response: unknown,
   simplifyOutput: boolean,
   outputContentAsJson: boolean,
 ): IDataObject {
   let parsedContent: OutputValue | undefined;
-  let jsonParseStatus: 'success' | 'failed' | undefined;
+  let jsonParseStatus: 'success' | 'failed' | 'disabled' = 'disabled';
 
   if (outputContentAsJson) {
-    const text = extractFirstResponseText(response) ?? '';
+    const text = stripJsonCodeFences(extractFirstResponseText(response) ?? '');
     try {
       parsedContent = JSON.parse(text) as OutputValue;
       jsonParseStatus = 'success';
@@ -392,14 +401,14 @@ function buildOutput(
     }
 
     const text = extractFirstResponseText(response) ?? '';
-    return { response: text };
+    return { response: text, jsonParseStatus };
   }
 
   if (isRecord(response)) {
     if (outputContentAsJson) {
       return { ...(response as IDataObject), content: parsedContent, jsonParseStatus };
     }
-    return response as IDataObject;
+    return { ...(response as IDataObject), jsonParseStatus };
   }
 
   let responseValue: OutputValue;
@@ -418,11 +427,7 @@ function buildOutput(
     }
   }
 
-  if (outputContentAsJson) {
-    return { response: responseValue, jsonParseStatus };
-  }
-
-  return { response: responseValue };
+  return { response: responseValue, jsonParseStatus };
 }
 
 export async function execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
