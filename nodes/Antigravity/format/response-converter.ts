@@ -84,29 +84,27 @@ export function convertGoogleToAnthropic(googleResponse, model) {
         }
     }
 
-    // Keep provider finishReason as-is (no normalization/parsing)
-    const finishReason = firstCandidate.finishReason;
+    const mappedContent = anthropicContent.length > 0 ? anthropicContent : [{ type: 'text', text: '' }];
 
-    // Extract usage metadata
-    // Note: Antigravity's promptTokenCount is the TOTAL (includes cached),
-    // but Anthropic's input_tokens excludes cached. We subtract to match.
-    const usageMetadata = response.usageMetadata || {};
-    const promptTokens = usageMetadata.promptTokenCount || 0;
-    const cachedTokens = usageMetadata.cachedContentTokenCount || 0;
-
+    // Return raw Google response while removing `parts` from candidates.
+    // Keep extracted Anthropic-style content as `content` for downstream consumers.
     return {
-        id: `msg_${crypto.randomBytes(16).toString('hex')}`,
-        type: 'message',
-        role: 'assistant',
-        content: anthropicContent.length > 0 ? anthropicContent : [{ type: 'text', text: '' }],
-        model: model,
-        stop_reason: finishReason,
-        stop_sequence: null,
-        usage: {
-            input_tokens: promptTokens - cachedTokens,
-            output_tokens: usageMetadata.candidatesTokenCount || 0,
-            cache_read_input_tokens: cachedTokens,
-            cache_creation_input_tokens: 0
-        }
+        ...response,
+        content: mappedContent,
+        candidates: candidates.map((candidate, index) => {
+            const candidateContent = candidate?.content;
+            if (!candidateContent || typeof candidateContent !== 'object') {
+                return candidate;
+            }
+
+            const { parts: _parts, ...restContent } = candidateContent;
+            return {
+                ...candidate,
+                content: index === 0
+                    ? { ...restContent, anthropicContent: mappedContent }
+                    : restContent
+            };
+        })
     };
+    return response;
 }
