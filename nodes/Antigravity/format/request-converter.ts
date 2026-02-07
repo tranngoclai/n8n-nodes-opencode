@@ -52,6 +52,10 @@ export function convertAnthropicToGoogle(anthropicRequest) {
         tool_choice,
         thinking,
         response_mime_type,
+        response_modalities,
+        responseModalities,
+        image_config,
+        imageConfig,
         google_search
     } = anthropicRequest;
     const modelName = anthropicRequest.model || '';
@@ -172,6 +176,39 @@ export function convertAnthropicToGoogle(anthropicRequest) {
     }
     if (response_mime_type && typeof response_mime_type === 'string') {
         googleRequest.generationConfig.responseMimeType = response_mime_type;
+    }
+
+    const normalizedResponseModalities = Array.isArray(response_modalities)
+        ? response_modalities
+        : Array.isArray(responseModalities)
+            ? responseModalities
+            : [];
+    if (normalizedResponseModalities.length > 0) {
+        googleRequest.generationConfig.responseModalities = normalizedResponseModalities
+            .map((value) => String(value))
+            .filter(Boolean);
+    }
+
+    const normalizedImageConfig = image_config || imageConfig;
+    if (normalizedImageConfig && typeof normalizedImageConfig === 'object') {
+        const aspectRatio = normalizedImageConfig.aspect_ratio ?? normalizedImageConfig.aspectRatio;
+        const imageSize = normalizedImageConfig.image_size ?? normalizedImageConfig.imageSize;
+        const personGeneration = normalizedImageConfig.person_generation ?? normalizedImageConfig.personGeneration;
+
+        const googleImageConfig = {};
+        if (aspectRatio) {
+            googleImageConfig.aspectRatio = aspectRatio;
+        }
+        if (imageSize) {
+            googleImageConfig.imageSize = imageSize;
+        }
+        if (personGeneration) {
+            googleImageConfig.personGeneration = personGeneration;
+        }
+
+        if (Object.keys(googleImageConfig).length > 0) {
+            googleRequest.generationConfig.imageConfig = googleImageConfig;
+        }
     }
 
     // Enable thinking for thinking models (Claude and Gemini 3+)

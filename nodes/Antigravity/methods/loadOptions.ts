@@ -3,6 +3,7 @@ import { fetchAvailableModels } from '../transport/antigravity.api';
 import { getModelFamily } from '../constants';
 
 type UnknownRecord = Record<string, unknown>;
+type ImageCapability = 'supported' | 'unsupported' | 'unknown';
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null;
@@ -17,9 +18,33 @@ function normalizeToken(value: unknown): string | null {
   return null;
 }
 
+function toTokens(entry: unknown): string[] {
+  if (!entry) return [];
+  if (Array.isArray(entry)) {
+    return entry.map(value => String(value).toLowerCase());
+  }
+  if (typeof entry === 'string') {
+    return [entry.toLowerCase()];
+  }
+  if (isRecord(entry)) {
+    return Object.entries(entry)
+      .filter(([, enabled]) => Boolean(enabled))
+      .map(([key]) => String(key).toLowerCase());
+  }
+  return [];
+}
+
+function readFirstTokens(candidates: unknown[]): string[] {
+  for (const candidate of candidates) {
+    const tokens = toTokens(candidate);
+    if (tokens.length > 0) return tokens;
+  }
+  return [];
+}
+
 function readModalities(model: UnknownRecord): string[] {
   const capabilities = isRecord(model.capabilities) ? model.capabilities : {};
-  const candidates: unknown[] = [
+  return readFirstTokens([
     model.modalities,
     model.inputModalities,
     model.supportedInputModalities,
@@ -29,24 +54,7 @@ function readModalities(model: UnknownRecord): string[] {
     model.supportedInput,
     capabilities.input,
     capabilities.inputModalities,
-  ];
-
-  for (const entry of candidates) {
-    if (!entry) continue;
-    if (Array.isArray(entry)) {
-      return entry.map(value => String(value).toLowerCase());
-    }
-    if (typeof entry === 'string') {
-      return [entry.toLowerCase()];
-    }
-    if (typeof entry === 'object') {
-      return Object.entries(entry)
-        .filter(([, enabled]) => Boolean(enabled))
-        .map(([key]) => String(key).toLowerCase());
-    }
-  }
-
-  return [];
+  ]);
 }
 
 function isTextModel(model: UnknownRecord): boolean {
@@ -71,14 +79,60 @@ function isTextModel(model: UnknownRecord): boolean {
   return true;
 }
 
+function detectImageCapability(modelId: string, model: UnknownRecord): ImageCapability {
+  const capabilities = isRecord(model.capabilities) ? model.capabilities : {};
+  const outputTokens = readFirstTokens([
+    model.outputModalities,
+    model.supportedOutputModalities,
+    model.supportedOutputTypes,
+    model.outputTypes,
+    model.supportedOutputs,
+    model.supportedOutput,
+    capabilities.output,
+    capabilities.outputModalities,
+    capabilities.imageGeneration,
+  ]);
+
+  if (outputTokens.length > 0) {
+    return outputTokens.some(token => token.includes('image')) ? 'supported' : 'unsupported';
+  }
+
+  const typeTokens = [
+    normalizeToken(model.type),
+    normalizeToken(model.modelType),
+    normalizeToken(model.outputType),
+    normalizeToken(capabilities.type),
+    normalizeToken(capabilities.modelType),
+  ].filter((token): token is string => typeof token === 'string');
+
+  if (typeTokens.some(token => token.includes('image'))) {
+    return 'supported';
+  }
+
+  if (typeTokens.some(token => token.includes('text'))) {
+    return 'unsupported';
+  }
+
+  if (modelId.toLowerCase().includes('image')) {
+    return 'supported';
+  }
+
+  return 'unknown';
+}
+
 export async function getModels(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
   const resource = this.getCurrentNodeParameter('resource') as string | undefined;
   const textOnly = resource === 'text';
+  const imageOnly = resource === 'image';
   const data = await fetchAvailableModels(this);
   const dataRecord = asRecord(data);
   const modelsRecord = isRecord(dataRecord.models) ? dataRecord.models : {};
   const models = Object.entries(modelsRecord)
     .filter(([, model]) => !textOnly || isTextModel(asRecord(model)))
+    .filter(([id, model]) => {
+      if (!imageOnly) return true;
+      return detectImageCapability(id, asRecord(model)) !== 'unsupported';
+    })
     .filter(([id]) => getModelFamily(id) === 'gemini')
     .map(([id]) => ({ name: id, value: id }));
   return models;

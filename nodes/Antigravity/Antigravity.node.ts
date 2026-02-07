@@ -33,6 +33,7 @@ export class Antigravity implements INodeType {
         noDataExpression: true,
         options: [
           { name: 'Text', value: 'text' },
+          { name: 'Image', value: 'image' },
           { name: 'Model', value: 'model' },
         ],
         default: 'text',
@@ -49,6 +50,19 @@ export class Antigravity implements INodeType {
         noDataExpression: true,
         options: [{ name: 'Message a Model', value: 'generate', action: 'Message a model' }],
         default: 'generate',
+      },
+      {
+        displayName: 'Operation',
+        name: 'operation',
+        type: 'options',
+        displayOptions: {
+          show: {
+            resource: ['image'],
+          },
+        },
+        noDataExpression: true,
+        options: [{ name: 'Generate Image', value: 'generateImage', action: 'Generate an image' }],
+        default: 'generateImage',
       },
       {
         displayName: 'Operation',

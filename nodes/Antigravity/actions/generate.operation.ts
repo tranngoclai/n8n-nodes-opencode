@@ -5,7 +5,7 @@ import {
   type INodeExecutionData,
   type INodeProperties,
 } from 'n8n-workflow';
-import { SHOW_GENERATE } from './constants';
+import { SHOW_GENERATE_TEXT } from './constants';
 import {
   callGenerateContent,
   GEMINI_MAX_OUTPUT_TOKENS,
@@ -29,7 +29,7 @@ export const description: INodeProperties[] = [
       'Choose from the list, or specify an ID using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
     default: 'gemini-3-flash',
     required: true,
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
     typeOptions: {
       loadOptionsMethod: 'getModels',
     },
@@ -42,7 +42,7 @@ export const description: INodeProperties[] = [
       multipleValues: true,
     },
     default: {},
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
     options: [
       {
         name: 'message',
@@ -77,14 +77,14 @@ export const description: INodeProperties[] = [
     name: 'outputContentAsJson',
     type: 'boolean',
     default: false,
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
   },
   {
     displayName: 'Simplify Output',
     name: 'simplifyOutput',
     type: 'boolean',
     default: false,
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
   },
   {
     displayName: 'Built-in Tools',
@@ -92,7 +92,7 @@ export const description: INodeProperties[] = [
     type: 'collection',
     placeholder: 'Add Built-in Tool',
     default: {},
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
     options: [
       {
         name: 'googleSearch',
@@ -114,7 +114,7 @@ export const description: INodeProperties[] = [
     type: 'collection',
     placeholder: 'Add Option',
     default: {},
-    displayOptions: SHOW_GENERATE,
+    displayOptions: SHOW_GENERATE_TEXT,
     options: [
       {
         name: 'maxTokens',

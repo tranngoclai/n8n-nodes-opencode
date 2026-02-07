@@ -31,7 +31,9 @@ Project selection is automatic.
 
 Resource `Text` provides the `Message a Model` operation.
 
-Resource `Models` provides the `List Models` operation.
+Resource `Image` provides the `Generate Image` operation.
+
+Resource `Model` provides the `List Models` operation.
 
 Key parameters for `Message a Model`:
 
@@ -43,6 +45,16 @@ Key parameters for `Message a Model`:
 - `Options > Response Schema Builder` to design a simple schema via fields
 - `Simplify Output` and `Output Content as JSON`
 - `Endpoint` to choose Auto, Prod, or Daily
+
+Key parameters for `Generate Image`:
+
+- Uses fixed model `gemini-3-pro-image` (no model picker)
+- `Prompt`
+- `Image Size` (`1K` or `2K`, default `1K`)
+- `Aspect Ratio` (`1:1`, `3:4`, `4:3`, `9:16`, `16:9`, default `1:1`)
+- `Person Generation` (`dont_allow`, `allow_adult`, `allow_all`; default `allow_adult`)
+
+`Generate Image` returns the regular JSON response and binary images (`image` for one image, or `image_1`, `image_2`, ... for multiple images). If the model response contains no image blocks, the node fails with a clear error.
 
 ## Web Search
 
