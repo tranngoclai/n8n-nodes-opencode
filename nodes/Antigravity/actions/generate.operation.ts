@@ -349,6 +349,11 @@ type OutputValue =
   | Array<string | number | boolean | null | undefined | object>
   | IDataObject[];
 
+type ExtractedImage = {
+  data: string;
+  mimeType: string;
+};
+
 function extractFirstResponseText(response: unknown): string | undefined {
   if (!isRecord(response)) return undefined;
 
@@ -366,6 +371,41 @@ function extractFirstResponseText(response: unknown): string | undefined {
 
   if (!textParts.length) return undefined;
   return textParts.join('');
+}
+
+function extractImagesFromResponse(response: unknown): ExtractedImage[] {
+  if (!isRecord(response)) return [];
+
+  return getArray(response.content)
+    .map((block) => {
+      if (!isRecord(block)) return undefined;
+      if (getStringProp(block as UnknownRecord, 'type') !== 'image') return undefined;
+
+      const source = getNestedRecord(block as UnknownRecord, 'source');
+      if (getStringProp(source, 'type') !== 'base64') return undefined;
+
+      const data = getStringProp(source, 'data');
+      if (!data) return undefined;
+
+      const mimeType = getStringProp(source, 'media_type') ?? 'application/octet-stream';
+
+      return { data, mimeType };
+    })
+    .filter((image): image is ExtractedImage => image !== undefined);
+}
+
+function extensionForMimeType(mimeType: string): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === 'image/jpeg') return 'jpg';
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'image/bmp') return 'bmp';
+  if (normalized === 'image/tiff') return 'tiff';
+
+  const [, subtype] = normalized.split('/');
+  if (!subtype) return 'bin';
+  return subtype.split('+')[0] || 'bin';
 }
 
 function stripJsonCodeFences(text: string): string {
@@ -472,8 +512,27 @@ export async function execute(this: IExecuteFunctions): Promise<INodeExecutionDa
         outputContentAsJson,
       });
       const output = buildOutput(response, simplifyOutput, outputContentAsJson);
+      const images = extractImagesFromResponse(response);
+      let binary: INodeExecutionData['binary'] | undefined;
 
-      returnData.push({ json: output });
+      if (images.length > 0) {
+        binary = {};
+
+        for (let imageIndex = 0; imageIndex < images.length; imageIndex++) {
+          const image = images[imageIndex];
+          const propertyName = images.length === 1 ? 'image' : `image_${imageIndex + 1}`;
+          const extension = extensionForMimeType(image.mimeType);
+          const fileName = `generated_${imageIndex + 1}.${extension}`;
+
+          binary[propertyName] = await this.helpers.prepareBinaryData(
+            Buffer.from(image.data, 'base64'),
+            fileName,
+            image.mimeType,
+          );
+        }
+      }
+
+      returnData.push({ json: output, binary });
     } catch (error) {
       if (error instanceof NodeApiError || error instanceof NodeOperationError) {
         throw error;
