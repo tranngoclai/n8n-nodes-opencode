@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-antigravity",
-	"version": "0.3.1",
+	"version": "0.3.2",
 	"description": "Antigravity Cloud Code node with web search tool loop",
 	"type": "commonjs",
 	"author": {
