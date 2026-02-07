@@ -7,16 +7,7 @@ import {
 } from 'n8n-workflow';
 import { fetchAvailableModels, getProjectId } from '../transport/antigravity.api';
 import { getModelFamily } from '../constants';
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return typeof value === 'object' && value !== null;
-}
-
-function asRecord(value: unknown): UnknownRecord {
-  return isRecord(value) ? value : {};
-}
+import { asRecord, isRecord } from './helpers/object';
 
 export const description: INodeProperties[] = [];
 
